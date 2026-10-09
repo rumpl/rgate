@@ -44,6 +44,7 @@ markdown_extensions:
 
 nav:
   - Home: README.md
+  - Try it out: https://rumpl.github.io/rgate/app/
   - Guides:
       - Getting started: guides/getting-started.md
       - Interface: guides/interface.md

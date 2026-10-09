@@ -3,25 +3,7 @@ name: Documentation
 on:
   push:
     branches: [main]
-    paths:
-      - "README.md"
-      - "LICENSE"
-      - "NOTICE"
-      - "examples/**"
-      - "docs/**"
-      - "mkdocs.yml"
-      - "scripts/docs-links.py"
-      - ".github/workflows/docs.yml"
   pull_request:
-    paths:
-      - "README.md"
-      - "LICENSE"
-      - "NOTICE"
-      - "examples/**"
-      - "docs/**"
-      - "mkdocs.yml"
-      - "scripts/docs-links.py"
-      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
@@ -47,6 +29,37 @@ jobs:
         run: python -m pip install -r docs/requirements.txt
       - name: Build and validate site
         run: python -m mkdocs build --strict
+      - name: Install browser build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Set up Rust for WebAssembly
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+      - name: Install matching wasm-bindgen CLI
+        run: |
+          version=$(python -c 'import tomllib; print(next(p["version"] for p in tomllib.load(open("Cargo.lock", "rb"))["package"] if p["name"] == "wasm-bindgen"))')
+          cargo install wasm-bindgen-cli --version "$version" --locked
+      - name: Build browser application
+        run: ./scripts/build-web.sh
+      - name: Add application to Pages site
+        run: cp -R target/web target/docs-site/app
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install browser test tools
+        working-directory: web
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Smoke test hosted application
+        run: |
+          mkdir -p target/pages-preview
+          ln -s "$PWD/target/docs-site" target/pages-preview/rgate
+          python -m http.server 8080 --bind 127.0.0.1 --directory target/pages-preview > /tmp/rgate-pages.log 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          RGATE_WEB_URL=http://127.0.0.1:8080/rgate/app/ node web/pages-smoke.mjs
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3

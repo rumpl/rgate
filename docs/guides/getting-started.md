@@ -31,6 +31,10 @@ cargo run -- examples/full-adder.rgate
 
 ## Browser
 
+[Try RGate online](https://rumpl.github.io/rgate/app/) without installing
+anything. Schematic simulation runs in your browser; native Icarus HDL execution
+is not available on the web.
+
 A ready build is served from `target/web`:
 
 ```sh
@@ -100,8 +104,8 @@ is misplaced, use
 The documentation is published at <https://rumpl.github.io/rgate/>. GitHub
 Actions builds it on pull requests and deploys it after changes land on `main`.
 The site includes search, guide/component navigation, screenshots, and
-light/dark appearance. This publishes documentation only, not the browser
-simulator.
+light/dark appearance. The same deployment includes the browser simulator at
+`/rgate/app/`, built and smoke-tested by CI.
 
 To preview locally:
 

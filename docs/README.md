@@ -5,6 +5,10 @@ by TkGate. Build schematics, reuse modules, run circuits, inspect live
 instances, and measure signals in the waveform viewer. The desktop and web
 applications share the same circuit model and simulator.
 
+**[Try it out in your browser](https://rumpl.github.io/rgate/app/)** — no
+installation needed. Schematic simulation runs locally; Icarus Verilog execution
+is desktop-only.
+
 ![RGate editor showing the full-adder example](images/editor.png)
 
 ## Guide
