@@ -105,7 +105,7 @@ The documentation is published at <https://rumpl.github.io/rgate/>. GitHub
 Actions builds it on pull requests and deploys it after changes land on `main`.
 The site includes search, guide/component navigation, screenshots, and
 light/dark appearance. The same deployment includes the browser simulator at
-`/rgate/app/`, built and smoke-tested by CI.
+`/rgate/app/`, built by CI.
 
 To preview locally:
 
