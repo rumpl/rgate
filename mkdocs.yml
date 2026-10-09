@@ -1,0 +1,82 @@
+site_name: RGate
+site_description:
+  A spiritual successor to TkGate for building and exploring digital circuits.
+site_url: https://rumpl.github.io/rgate/
+repo_url: https://github.com/rumpl/rgate
+repo_name: rumpl/rgate
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: target/docs-site
+strict: true
+exclude_docs: |
+  requirements.txt
+hooks:
+  - scripts/docs-links.py
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - tables
+  - fenced_code
+  - toc:
+      permalink: true
+
+nav:
+  - Home: README.md
+  - Guides:
+      - Getting started: guides/getting-started.md
+      - Interface: guides/interface.md
+      - Modules and symbols: guides/modules.md
+      - Simulation: guides/simulation.md
+      - Waveforms: guides/waveforms.md
+      - Verilog modules: guides/verilog-modules.md
+      - Files and workspace: guides/files-and-workspace.md
+  - Components:
+      - Overview: components/README.md
+      - Logic: components/logic.md
+      - Inputs and displays: components/inputs-and-displays.md
+      - Sequential and memory: components/sequential-and-memory.md
+      - Routing and buses: components/routing.md
+      - Arithmetic: components/arithmetic.md
+      - Transistors: components/transistors.md
+      - VGA display: components/vga.md
+      - TTY: components/tty.md
+      - Annotations: components/annotations.md
+  - Examples:
+      - Overview: examples/README.md
+      - LC-3 computer: examples/lc3.md
+      - Tiny VGA controller: examples/tiny-vga.md
+  - Reference:
+      - Shortcuts: reference/shortcuts.md
+      - Troubleshooting: reference/troubleshooting.md
+  - Development:
+      - HDL backend evaluation: guides/hdl-backend.md
+      - Icarus backend: guides/icarus-backend.md
+      - Xezim contribution proposal: development/xezim-interactive-api.md
+      - Screenshot provenance: images/README.md
+
+validation:
+  links:
+    unrecognized_links: warn
+    anchors: warn

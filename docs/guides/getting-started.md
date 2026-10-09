@@ -94,3 +94,30 @@ If a pin refuses a connection, check its bit width. Use
 [component properties](interface.md#properties) before wiring. If a gate or wire
 is misplaced, use
 [selection and wire dragging](interface.md#selection-and-moving).
+
+## Documentation website
+
+The documentation is published at <https://rumpl.github.io/rgate/>. GitHub
+Actions builds it on pull requests and deploys it after changes land on `main`.
+The site includes search, guide/component navigation, screenshots, and
+light/dark appearance. This publishes documentation only, not the browser
+simulator.
+
+To preview locally:
+
+```sh
+python3 -m venv .venv-docs
+.venv-docs/bin/pip install -r docs/requirements.txt
+.venv-docs/bin/python -m mkdocs serve
+```
+
+The preview runs at `http://127.0.0.1:8000`; Ctrl-C stops it. To validate
+without starting a server, run `.venv-docs/bin/python -m mkdocs build --strict`.
+Output is in the ignored `target/docs-site/` directory. Repository-file links
+are rewritten to GitHub URLs when building; Markdown links in the source docs
+stay unchanged.
+
+For the first deployment, the repository owner must select **Settings → Pages →
+Build and deployment → Source: GitHub Actions**. The workflow can also be
+started manually from the Actions tab. Deployment uses the `github-pages`
+environment; any repository environment approval rules still apply.
