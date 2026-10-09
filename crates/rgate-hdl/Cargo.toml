@@ -1,0 +1,31 @@
+[package]
+name = "rgate-hdl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+xezim = ["dep:xezim"]
+icarus = ["dep:tempfile"]
+
+[dependencies]
+rgate-core.workspace = true
+rgate-sim.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile = { version = "3", optional = true }
+xezim = { git = "https://github.com/aionhw/xezim", rev = "8082196408aef55792434c7bedf251f8d0dab51a", optional = true }
+
+[[bin]]
+name = "rgate-hdl"
+path = "src/main.rs"
+required-features = ["icarus"]
+
+[dev-dependencies]
+rgate-format.workspace = true

@@ -1,0 +1,44 @@
+[workspace]
+members = ["crates/*"]
+default-members = ["crates/rgate"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+rgate-core = { path = "crates/rgate-core" }
+rgate-sim = { path = "crates/rgate-sim" }
+rgate-format = { path = "crates/rgate-format" }
+rgate-editor = { path = "crates/rgate-editor" }
+rgate-ui = { path = "crates/rgate-ui" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+regex = "1"
+num-bigint = "0.5.1"
+num-traits = "0.2"
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["runtime_shaders", "font-kit", "wayland", "x11"], default-features = false }
+gpui_web = { package = "gpui-pre-web", version = "=0.3.8", default-features = false }
+unicode-segmentation = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = false
+codegen-units = 16

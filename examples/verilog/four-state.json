@@ -1,0 +1,86 @@
+{
+  "top": "four_state_demo",
+  "sources": [
+    "harnesses/four-state.sv"
+  ],
+  "signals": [
+    {
+      "path": "enable",
+      "width": 1,
+      "input": true
+    },
+    {
+      "path": "conflicting",
+      "width": 1,
+      "input": true
+    },
+    {
+      "path": "bus",
+      "width": 4,
+      "input": false
+    },
+    {
+      "path": "delayed",
+      "width": 4,
+      "input": false
+    },
+    {
+      "path": "wide",
+      "width": 128,
+      "input": false
+    }
+  ],
+  "actions": [
+    {
+      "action": "probe",
+      "signal": "bus"
+    },
+    {
+      "action": "probe",
+      "signal": "delayed"
+    },
+    {
+      "action": "advance",
+      "ns": 3
+    },
+    {
+      "action": "check",
+      "signal": "bus",
+      "bits": "zzzz"
+    },
+    {
+      "action": "set",
+      "signal": "enable",
+      "bits": "1"
+    },
+    {
+      "action": "check",
+      "signal": "bus",
+      "bits": "1010"
+    },
+    {
+      "action": "check",
+      "signal": "delayed",
+      "bits": "zzzz"
+    },
+    {
+      "action": "advance",
+      "ns": 2
+    },
+    {
+      "action": "check",
+      "signal": "delayed",
+      "bits": "1010"
+    },
+    {
+      "action": "set",
+      "signal": "conflicting",
+      "bits": "1"
+    },
+    {
+      "action": "check",
+      "signal": "bus",
+      "bits": "xxxx"
+    }
+  ]
+}

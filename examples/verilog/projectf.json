@@ -1,0 +1,120 @@
+{
+  "top": "projectf_demo",
+  "sources": [
+    "projectf/display_480p.sv",
+    "projectf/lfsr.sv",
+    "harnesses/projectf.sv"
+  ],
+  "signals": [
+    {
+      "path": "reset",
+      "width": 1,
+      "input": true
+    },
+    {
+      "path": "enable",
+      "width": 1,
+      "input": true
+    },
+    {
+      "path": "seed",
+      "width": 8,
+      "input": true
+    },
+    {
+      "path": "rng.sreg",
+      "width": 8,
+      "input": false
+    },
+    {
+      "path": "timing.x",
+      "width": 16,
+      "input": false
+    },
+    {
+      "path": "timing.y",
+      "width": 16,
+      "input": false
+    },
+    {
+      "path": "de",
+      "width": 1,
+      "input": false
+    },
+    {
+      "path": "hsync",
+      "width": 1,
+      "input": false
+    },
+    {
+      "path": "vsync",
+      "width": 1,
+      "input": false
+    }
+  ],
+  "actions": [
+    {
+      "action": "probe",
+      "signal": "rng.sreg"
+    },
+    {
+      "action": "probe",
+      "signal": "hsync"
+    },
+    {
+      "action": "probe",
+      "signal": "vsync"
+    },
+    {
+      "action": "advance",
+      "ns": 6
+    },
+    {
+      "action": "check",
+      "signal": "rng.sreg",
+      "bits": "00000001"
+    },
+    {
+      "action": "set",
+      "signal": "reset",
+      "bits": "0"
+    },
+    {
+      "action": "set",
+      "signal": "enable",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 10
+    },
+    {
+      "action": "check",
+      "signal": "rng.sreg",
+      "bits": "10111000"
+    },
+    {
+      "action": "advance",
+      "ns": 10
+    },
+    {
+      "action": "check",
+      "signal": "rng.sreg",
+      "bits": "01011100"
+    },
+    {
+      "action": "set",
+      "signal": "enable",
+      "bits": "0"
+    },
+    {
+      "action": "advance",
+      "ns": 15360
+    },
+    {
+      "action": "check",
+      "signal": "rng.sreg",
+      "bits": "01011100"
+    }
+  ]
+}

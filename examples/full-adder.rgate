@@ -1,0 +1,889 @@
+{
+  "format": "rgate",
+  "version": 1,
+  "circuit": {
+    "title": "Full adder",
+    "root": "main",
+    "modules": [
+      {
+        "name": "main",
+        "gates": [
+          {
+            "id": 1,
+            "name": "A",
+            "kind": "switch",
+            "position": {
+              "x": 70.0,
+              "y": 100.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "High"
+              ]
+            },
+            "pins": [
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 17.0,
+                  "y": 0.0
+                },
+                "net": 1
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 2,
+            "name": "B",
+            "kind": "switch",
+            "position": {
+              "x": 70.0,
+              "y": 160.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 17.0,
+                  "y": 0.0
+                },
+                "net": 2
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 3,
+            "name": "Cin",
+            "kind": "switch",
+            "position": {
+              "x": 70.0,
+              "y": 260.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 17.0,
+                  "y": 0.0
+                },
+                "net": 3
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 4,
+            "name": "xor_ab",
+            "kind": "xor",
+            "position": {
+              "x": 220.0,
+              "y": 130.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": -2.5
+                },
+                "net": 1
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": 2.5
+                },
+                "net": 2
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "net": 4
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 5,
+            "name": "xor_sum",
+            "kind": "xor",
+            "position": {
+              "x": 400.0,
+              "y": 110.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": -2.5
+                },
+                "net": 3
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": 2.5
+                },
+                "net": 4
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "net": 7
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 6,
+            "name": "and_ab",
+            "kind": "and",
+            "position": {
+              "x": 220.0,
+              "y": 210.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": -2.5
+                },
+                "net": 1
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": 2.5
+                },
+                "net": 2
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "net": 5
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 7,
+            "name": "and_carry",
+            "kind": "and",
+            "position": {
+              "x": 400.0,
+              "y": 230.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": -2.5
+                },
+                "net": 3
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": 2.5
+                },
+                "net": 4
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "net": 6
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 8,
+            "name": "or_cout",
+            "kind": "or",
+            "position": {
+              "x": 520.0,
+              "y": 270.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": -2.5
+                },
+                "net": 5
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": 2.5
+                },
+                "net": 6
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "net": 8
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 9,
+            "name": "Sum",
+            "kind": "led",
+            "position": {
+              "x": 590.0,
+              "y": 110.0
+            },
+            "rotation": 3,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I",
+                "direction": "input",
+                "offset": {
+                  "x": 0.0,
+                  "y": 7.0
+                },
+                "net": 7
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 10,
+            "name": "Cout",
+            "kind": "led",
+            "position": {
+              "x": 590.0,
+              "y": 270.0
+            },
+            "rotation": 3,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I",
+                "direction": "input",
+                "offset": {
+                  "x": 0.0,
+                  "y": 7.0
+                },
+                "net": 8
+              }
+            ],
+            "text": "",
+            "show_name": true
+          },
+          {
+            "id": 11,
+            "name": "title",
+            "kind": "comment",
+            "position": {
+              "x": 45.0,
+              "y": 35.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [],
+            "text": "1-bit full adder",
+            "show_name": true
+          },
+          {
+            "id": 12,
+            "name": "instructions",
+            "kind": "comment",
+            "position": {
+              "x": 45.0,
+              "y": 330.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [],
+            "text": "Sum = A ⊕ B ⊕ Cin\nCout = A·B + Cin·(A ⊕ B)\n\nPress Play, then click the switches.\nDouble-click a wire to add a waveform probe.",
+            "show_name": true
+          }
+        ],
+        "nets": [
+          {
+            "id": 1,
+            "name": "A",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 2,
+            "name": "B",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 3,
+            "name": "Cin",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 4,
+            "name": "AxorB",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 5,
+            "name": "AB",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 6,
+            "name": "carry",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 7,
+            "name": "Sum",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 8,
+            "name": "Cout",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          }
+        ],
+        "wires": [
+          {
+            "id": 1,
+            "net": 1,
+            "points": [
+              {
+                "x": 87.0,
+                "y": 100.0
+              },
+              {
+                "x": 115.0,
+                "y": 100.0
+              },
+              {
+                "x": 115.0,
+                "y": 127.5
+              },
+              {
+                "x": 209.0,
+                "y": 127.5
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 2,
+            "net": 1,
+            "points": [
+              {
+                "x": 87.0,
+                "y": 100.0
+              },
+              {
+                "x": 133.0,
+                "y": 100.0
+              },
+              {
+                "x": 133.0,
+                "y": 207.5
+              },
+              {
+                "x": 209.0,
+                "y": 207.5
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 6,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 3,
+            "net": 2,
+            "points": [
+              {
+                "x": 87.0,
+                "y": 160.0
+              },
+              {
+                "x": 115.0,
+                "y": 160.0
+              },
+              {
+                "x": 115.0,
+                "y": 132.5
+              },
+              {
+                "x": 209.0,
+                "y": 132.5
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "I1"
+            }
+          },
+          {
+            "id": 4,
+            "net": 2,
+            "points": [
+              {
+                "x": 87.0,
+                "y": 160.0
+              },
+              {
+                "x": 133.0,
+                "y": 160.0
+              },
+              {
+                "x": 133.0,
+                "y": 212.5
+              },
+              {
+                "x": 209.0,
+                "y": 212.5
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 6,
+              "pin": "I1"
+            }
+          },
+          {
+            "id": 5,
+            "net": 3,
+            "points": [
+              {
+                "x": 87.0,
+                "y": 260.0
+              },
+              {
+                "x": 115.0,
+                "y": 260.0
+              },
+              {
+                "x": 115.0,
+                "y": 107.5
+              },
+              {
+                "x": 389.0,
+                "y": 107.5
+              }
+            ],
+            "start": {
+              "gate": 3,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 6,
+            "net": 3,
+            "points": [
+              {
+                "x": 87.0,
+                "y": 260.0
+              },
+              {
+                "x": 133.0,
+                "y": 260.0
+              },
+              {
+                "x": 133.0,
+                "y": 227.5
+              },
+              {
+                "x": 389.0,
+                "y": 227.5
+              }
+            ],
+            "start": {
+              "gate": 3,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 7,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 7,
+            "net": 4,
+            "points": [
+              {
+                "x": 230.0,
+                "y": 130.0
+              },
+              {
+                "x": 258.0,
+                "y": 130.0
+              },
+              {
+                "x": 258.0,
+                "y": 112.5
+              },
+              {
+                "x": 389.0,
+                "y": 112.5
+              }
+            ],
+            "start": {
+              "gate": 4,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "I1"
+            }
+          },
+          {
+            "id": 8,
+            "net": 4,
+            "points": [
+              {
+                "x": 230.0,
+                "y": 130.0
+              },
+              {
+                "x": 276.0,
+                "y": 130.0
+              },
+              {
+                "x": 276.0,
+                "y": 232.5
+              },
+              {
+                "x": 389.0,
+                "y": 232.5
+              }
+            ],
+            "start": {
+              "gate": 4,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 7,
+              "pin": "I1"
+            }
+          },
+          {
+            "id": 9,
+            "net": 5,
+            "points": [
+              {
+                "x": 230.0,
+                "y": 210.0
+              },
+              {
+                "x": 258.0,
+                "y": 210.0
+              },
+              {
+                "x": 258.0,
+                "y": 267.5
+              },
+              {
+                "x": 509.0,
+                "y": 267.5
+              }
+            ],
+            "start": {
+              "gate": 6,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 8,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 10,
+            "net": 6,
+            "points": [
+              {
+                "x": 410.0,
+                "y": 230.0
+              },
+              {
+                "x": 438.0,
+                "y": 230.0
+              },
+              {
+                "x": 438.0,
+                "y": 272.5
+              },
+              {
+                "x": 509.0,
+                "y": 272.5
+              }
+            ],
+            "start": {
+              "gate": 7,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 8,
+              "pin": "I1"
+            }
+          },
+          {
+            "id": 11,
+            "net": 7,
+            "points": [
+              {
+                "x": 410.0,
+                "y": 110.0
+              },
+              {
+                "x": 438.0,
+                "y": 110.0
+              },
+              {
+                "x": 438.0,
+                "y": 110.0
+              },
+              {
+                "x": 583.0,
+                "y": 110.0
+              }
+            ],
+            "start": {
+              "gate": 5,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 9,
+              "pin": "I"
+            }
+          },
+          {
+            "id": 12,
+            "net": 8,
+            "points": [
+              {
+                "x": 530.0,
+                "y": 270.0
+              },
+              {
+                "x": 558.0,
+                "y": 270.0
+              },
+              {
+                "x": 558.0,
+                "y": 270.0
+              },
+              {
+                "x": 583.0,
+                "y": 270.0
+              }
+            ],
+            "start": {
+              "gate": 8,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 10,
+              "pin": "I"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "top": "picorv32_demo",
+  "sources": [
+    "picorv32/picorv32.v",
+    "harnesses/picorv32.sv"
+  ],
+  "signals": [
+    {
+      "path": "reset_n",
+      "width": 1,
+      "input": true
+    },
+    {
+      "path": "trap",
+      "width": 1,
+      "input": false
+    },
+    {
+      "path": "result",
+      "width": 32,
+      "input": false
+    },
+    {
+      "path": "cpu.reg_pc",
+      "width": 32,
+      "input": false
+    },
+    {
+      "path": "mem_addr",
+      "width": 32,
+      "input": false
+    },
+    {
+      "path": "mem_wdata",
+      "width": 32,
+      "input": false
+    }
+  ],
+  "actions": [
+    {
+      "action": "probe",
+      "signal": "result"
+    },
+    {
+      "action": "advance",
+      "ns": 30
+    },
+    {
+      "action": "set",
+      "signal": "reset_n",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 2000
+    },
+    {
+      "action": "check",
+      "signal": "result",
+      "bits": "00000000000000000000000000001100"
+    },
+    {
+      "action": "check",
+      "signal": "trap",
+      "bits": "1"
+    }
+  ]
+}

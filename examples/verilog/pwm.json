@@ -1,0 +1,187 @@
+{
+  "top": "pwm_demo",
+  "sources": [
+    "projectf/pwm.sv",
+    "harnesses/pwm.sv"
+  ],
+  "signals": [
+    {
+      "path": "duty",
+      "width": 8,
+      "input": true
+    },
+    {
+      "path": "dimmer.cnt",
+      "width": 8,
+      "input": false
+    },
+    {
+      "path": "led",
+      "width": 1,
+      "input": false
+    }
+  ],
+  "actions": [
+    {
+      "action": "probe",
+      "signal": "led"
+    },
+    {
+      "action": "probe",
+      "signal": "dimmer.cnt"
+    },
+    {
+      "action": "advance",
+      "ns": 30
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "0"
+    },
+    {
+      "action": "set",
+      "signal": "duty",
+      "bits": "00000001"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 25600
+    },
+    {
+      "action": "check",
+      "signal": "dimmer.cnt",
+      "bits": "00000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "set",
+      "signal": "duty",
+      "bits": "01000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 25600
+    },
+    {
+      "action": "check",
+      "signal": "dimmer.cnt",
+      "bits": "00000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "set",
+      "signal": "duty",
+      "bits": "10000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 25600
+    },
+    {
+      "action": "check",
+      "signal": "dimmer.cnt",
+      "bits": "00000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "set",
+      "signal": "duty",
+      "bits": "11000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 25600
+    },
+    {
+      "action": "check",
+      "signal": "dimmer.cnt",
+      "bits": "00000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "set",
+      "signal": "duty",
+      "bits": "11111111"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 25600
+    },
+    {
+      "action": "check",
+      "signal": "dimmer.cnt",
+      "bits": "00000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "1"
+    },
+    {
+      "action": "set",
+      "signal": "duty",
+      "bits": "00000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "0"
+    },
+    {
+      "action": "advance",
+      "ns": 25600
+    },
+    {
+      "action": "check",
+      "signal": "dimmer.cnt",
+      "bits": "00000000"
+    },
+    {
+      "action": "check",
+      "signal": "led",
+      "bits": "0"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+[
+  {
+    "directory": "projectf",
+    "repository": "https://github.com/projf/projf-explore",
+    "revision": "dd212c2e5e0e0d8bdcf93ba077630dbfd49ae708",
+    "files": {
+      "projectf/LICENSE": "1868eca3c32690b3abb79311a30c5158afa1c9c5560972baf9315f62d805152c",
+      "projectf/display_480p.sv": "729b2a634735651925e37b02e3e51db035d149d035340c1c237c87e27ad68e50",
+      "projectf/lfsr.sv": "743197214faf97143fd1cfeda8d5e5a2254d2d8e5b960d41ea00b7376d4a7af4",
+      "projectf/pwm.sv": "9de3120cacb7f4476334251a06b9fd51ec37165c7e63ed371cdca22363691f4e"
+    }
+  },
+  {
+    "directory": "uart",
+    "repository": "https://github.com/alexforencich/verilog-uart",
+    "revision": "1b867e53af738e4a8bc7c839ca2f1c07f40382dc",
+    "files": {
+      "uart/uart.v": "4f91abcd67ff180afadbad06c3b44d33c9f1d69bfaeae3b5696be112efae35c9",
+      "uart/uart_rx.v": "e686104e5ff2d25fa1504e8d08259cef508f2ec9c9e8cfa63364f3fcb39b9f5c",
+      "uart/uart_tx.v": "e9559ddebf124f8fbface06bf7091296baa78c7acab95a36b40a919663349d34",
+      "uart/LICENSE": "c0557ae22defc40a2e9e487a6d911f491358a629379c955752863657f9e36663"
+    }
+  },
+  {
+    "directory": "picorv32",
+    "repository": "https://github.com/YosysHQ/picorv32",
+    "revision": "ef203c2b0a3fb793280f5114941416c425c5b461",
+    "files": {
+      "picorv32/COPYING": "041ebc727233e5bf096dd41260cbb81014d3d29ca007a15f3b1807d4e9ff288e",
+      "picorv32/picorv32.v": "0836050971b3c6cdd28ac3b1e5719a67fb645161912bef1e472e63995ceb0622"
+    }
+  }
+]

@@ -1,0 +1,40 @@
+[package]
+name = "rgate-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+icarus = ["dep:rgate-hdl"]
+
+[dependencies]
+rgate-core.workspace = true
+rgate-sim.workspace = true
+rgate-hdl = { path = "../rgate-hdl", optional = true, features = ["icarus"] }
+rgate-format.workspace = true
+rgate-editor.workspace = true
+gpui.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+unicode-segmentation.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+gpui_web.workspace = true
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+gpui_platform.workspace = true
+gpui-component = { version = "=0.7.1", features = ["tree-sitter"] }
+tree-sitter-verilog = "1.0.3"

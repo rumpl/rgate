@@ -1,0 +1,3945 @@
+{
+  "format": "rgate",
+  "version": 1,
+  "circuit": {
+    "title": "Hierarchical 8-bit ripple-carry adder",
+    "root": "main",
+    "modules": [
+      {
+        "name": "main",
+        "gates": [
+          {
+            "id": 1,
+            "name": "A",
+            "kind": "dip",
+            "position": {
+              "x": 100.0,
+              "y": 90.0
+            },
+            "rotation": 0,
+            "width": 8,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "High",
+                "Low",
+                "High",
+                "Low",
+                "High",
+                "High",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 0.0,
+                  "y": 10.0
+                },
+                "net": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 2,
+            "name": "B",
+            "kind": "dip",
+            "position": {
+              "x": 100.0,
+              "y": 190.0
+            },
+            "rotation": 0,
+            "width": 8,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "High",
+                "High",
+                "High",
+                "Low",
+                "Low",
+                "High",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 0.0,
+                  "y": 10.0
+                },
+                "net": 2
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 3,
+            "name": "Cin",
+            "kind": "switch",
+            "position": {
+              "x": 100.0,
+              "y": 290.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 17.0,
+                  "y": 0.0
+                },
+                "net": 3
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 4,
+            "name": "adder",
+            "kind": {
+              "module": "adder8"
+            },
+            "position": {
+              "x": 370.0,
+              "y": 190.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -20.0
+                },
+                "net": 1,
+                "width": 8
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 0.0
+                },
+                "net": 2,
+                "width": 8
+              },
+              {
+                "name": "Cin",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 20.0
+                },
+                "net": 3,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 4,
+                "width": 8
+              },
+              {
+                "name": "Cout",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 5,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 5,
+            "name": "Sum_hex",
+            "kind": "led",
+            "position": {
+              "x": 620.0,
+              "y": 160.0
+            },
+            "rotation": 3,
+            "width": 8,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I",
+                "direction": "input",
+                "offset": {
+                  "x": 0.0,
+                  "y": 7.0
+                },
+                "net": 4
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "hex",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 6,
+            "name": "Cout",
+            "kind": "led",
+            "position": {
+              "x": 620.0,
+              "y": 230.0
+            },
+            "rotation": 3,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I",
+                "direction": "input",
+                "offset": {
+                  "x": 0.0,
+                  "y": 7.0
+                },
+                "net": 5
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 7,
+            "name": "guide",
+            "kind": "comment",
+            "position": {
+              "x": 50.0,
+              "y": 370.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [],
+            "text": "8-BIT ADDER — modules inside modules\nmain -> adder8 -> adder4 -> full_adder -> half_adder -> XOR / AND\n\nInitial: 35 + 27 + 0 = 5C (hex). Cout lights on overflow.\nRun, click A/B DIP inputs to increment; click Cin to toggle carry-in.\nEdit input values via Properties. Double-click module blocks to explore.",
+            "show_name": false,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          }
+        ],
+        "nets": [
+          {
+            "id": 1,
+            "name": "A",
+            "width": 8,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 2,
+            "name": "B",
+            "width": 8,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 3,
+            "name": "Cin",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 4,
+            "name": "Sum",
+            "width": 8,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 5,
+            "name": "Cout",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          }
+        ],
+        "wires": [
+          {
+            "id": 1,
+            "net": 1,
+            "points": [
+              {
+                "x": 100.0,
+                "y": 100.0
+              },
+              {
+                "x": 210.0,
+                "y": 100.0
+              },
+              {
+                "x": 210.0,
+                "y": 170.0
+              },
+              {
+                "x": 320.0,
+                "y": 170.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 2,
+            "net": 2,
+            "points": [
+              {
+                "x": 100.0,
+                "y": 200.0
+              },
+              {
+                "x": 210.0,
+                "y": 200.0
+              },
+              {
+                "x": 210.0,
+                "y": 190.0
+              },
+              {
+                "x": 320.0,
+                "y": 190.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 3,
+            "net": 3,
+            "points": [
+              {
+                "x": 117.0,
+                "y": 290.0
+              },
+              {
+                "x": 218.5,
+                "y": 290.0
+              },
+              {
+                "x": 218.5,
+                "y": 210.0
+              },
+              {
+                "x": 320.0,
+                "y": 210.0
+              }
+            ],
+            "start": {
+              "gate": 3,
+              "pin": "Z"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "Cin"
+            }
+          },
+          {
+            "id": 4,
+            "net": 4,
+            "points": [
+              {
+                "x": 420.0,
+                "y": 180.0
+              },
+              {
+                "x": 516.5,
+                "y": 180.0
+              },
+              {
+                "x": 516.5,
+                "y": 160.0
+              },
+              {
+                "x": 613.0,
+                "y": 160.0
+              }
+            ],
+            "start": {
+              "gate": 4,
+              "pin": "Sum"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "I"
+            }
+          },
+          {
+            "id": 5,
+            "net": 5,
+            "points": [
+              {
+                "x": 420.0,
+                "y": 200.0
+              },
+              {
+                "x": 516.5,
+                "y": 200.0
+              },
+              {
+                "x": 516.5,
+                "y": 230.0
+              },
+              {
+                "x": 613.0,
+                "y": 230.0
+              }
+            ],
+            "start": {
+              "gate": 4,
+              "pin": "Cout"
+            },
+            "end": {
+              "gate": 6,
+              "pin": "I"
+            }
+          }
+        ]
+      },
+      {
+        "name": "half_adder",
+        "gates": [
+          {
+            "id": 1,
+            "name": "sum_xor",
+            "kind": "xor",
+            "position": {
+              "x": 220.0,
+              "y": 100.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": -2.5
+                },
+                "net": 1
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": 2.5
+                },
+                "net": 2
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "net": 3
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 2,
+            "name": "carry_and",
+            "kind": "and",
+            "position": {
+              "x": 220.0,
+              "y": 190.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": -2.5
+                },
+                "net": 1
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": 2.5
+                },
+                "net": 2
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "net": 4
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 3,
+            "name": "guide",
+            "kind": "comment",
+            "position": {
+              "x": 60.0,
+              "y": 270.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [],
+            "text": "HALF ADDER — basic gates only\nSum = A XOR B; Carry = A AND B",
+            "show_name": false,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          }
+        ],
+        "nets": [
+          {
+            "id": 1,
+            "name": "A",
+            "width": 1,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 2,
+            "name": "B",
+            "width": 1,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 3,
+            "name": "Sum",
+            "width": 1,
+            "show_name": true,
+            "port": "output"
+          },
+          {
+            "id": 4,
+            "name": "Carry",
+            "width": 1,
+            "show_name": true,
+            "port": "output"
+          }
+        ],
+        "wires": [
+          {
+            "id": 1,
+            "net": 1,
+            "points": [
+              {
+                "x": 144.0,
+                "y": 97.5
+              },
+              {
+                "x": 176.5,
+                "y": 97.5
+              },
+              {
+                "x": 176.5,
+                "y": 97.5
+              },
+              {
+                "x": 209.0,
+                "y": 97.5
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 1,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 2,
+            "net": 1,
+            "points": [
+              {
+                "x": 144.0,
+                "y": 97.5
+              },
+              {
+                "x": 176.5,
+                "y": 97.5
+              },
+              {
+                "x": 176.5,
+                "y": 187.5
+              },
+              {
+                "x": 209.0,
+                "y": 187.5
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 2,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 3,
+            "net": 2,
+            "points": [
+              {
+                "x": 144.0,
+                "y": 102.5
+              },
+              {
+                "x": 176.5,
+                "y": 102.5
+              },
+              {
+                "x": 176.5,
+                "y": 102.5
+              },
+              {
+                "x": 209.0,
+                "y": 102.5
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 1,
+              "pin": "I1"
+            }
+          },
+          {
+            "id": 4,
+            "net": 2,
+            "points": [
+              {
+                "x": 144.0,
+                "y": 102.5
+              },
+              {
+                "x": 176.5,
+                "y": 102.5
+              },
+              {
+                "x": 176.5,
+                "y": 192.5
+              },
+              {
+                "x": 209.0,
+                "y": 192.5
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 2,
+              "pin": "I1"
+            }
+          },
+          {
+            "id": 5,
+            "net": 3,
+            "points": [
+              {
+                "x": 230.0,
+                "y": 100.0
+              },
+              {
+                "x": 295.0,
+                "y": 100.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z"
+            },
+            "end": null
+          },
+          {
+            "id": 6,
+            "net": 4,
+            "points": [
+              {
+                "x": 230.0,
+                "y": 190.0
+              },
+              {
+                "x": 295.0,
+                "y": 190.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z"
+            },
+            "end": null
+          }
+        ]
+      },
+      {
+        "name": "full_adder",
+        "gates": [
+          {
+            "id": 1,
+            "name": "half_AB",
+            "kind": {
+              "module": "half_adder"
+            },
+            "position": {
+              "x": 220.0,
+              "y": 110.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -10.0
+                },
+                "net": 1,
+                "width": 1
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 10.0
+                },
+                "net": 2,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 6,
+                "width": 1
+              },
+              {
+                "name": "Carry",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 7,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 2,
+            "name": "half_Cin",
+            "kind": {
+              "module": "half_adder"
+            },
+            "position": {
+              "x": 440.0,
+              "y": 110.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -10.0
+                },
+                "net": 6,
+                "width": 1
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 10.0
+                },
+                "net": 3,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 4,
+                "width": 1
+              },
+              {
+                "name": "Carry",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 8,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 3,
+            "name": "carry_or",
+            "kind": "or",
+            "position": {
+              "x": 600.0,
+              "y": 230.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": -2.5
+                },
+                "net": 7
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -11.0,
+                  "y": 2.5
+                },
+                "net": 8
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 10.0,
+                  "y": 0.0
+                },
+                "net": 5
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 4,
+            "name": "guide",
+            "kind": "comment",
+            "position": {
+              "x": 70.0,
+              "y": 320.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [],
+            "text": "FULL ADDER — two half adders + OR\nDouble-click either half-adder to see XOR and AND gates.",
+            "show_name": false,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          }
+        ],
+        "nets": [
+          {
+            "id": 1,
+            "name": "A",
+            "width": 1,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 2,
+            "name": "B",
+            "width": 1,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 3,
+            "name": "Cin",
+            "width": 1,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 4,
+            "name": "Sum",
+            "width": 1,
+            "show_name": true,
+            "port": "output"
+          },
+          {
+            "id": 5,
+            "name": "Cout",
+            "width": 1,
+            "show_name": true,
+            "port": "output"
+          },
+          {
+            "id": 6,
+            "name": "A_xor_B",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 7,
+            "name": "carry_AB",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 8,
+            "name": "carry_Cin",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          }
+        ],
+        "wires": [
+          {
+            "id": 1,
+            "net": 1,
+            "points": [
+              {
+                "x": 105.0,
+                "y": 100.0
+              },
+              {
+                "x": 137.5,
+                "y": 100.0
+              },
+              {
+                "x": 137.5,
+                "y": 100.0
+              },
+              {
+                "x": 170.0,
+                "y": 100.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 1,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 2,
+            "net": 2,
+            "points": [
+              {
+                "x": 105.0,
+                "y": 120.0
+              },
+              {
+                "x": 137.5,
+                "y": 120.0
+              },
+              {
+                "x": 137.5,
+                "y": 120.0
+              },
+              {
+                "x": 170.0,
+                "y": 120.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 1,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 3,
+            "net": 3,
+            "points": [
+              {
+                "x": 325.0,
+                "y": 120.0
+              },
+              {
+                "x": 357.5,
+                "y": 120.0
+              },
+              {
+                "x": 357.5,
+                "y": 120.0
+              },
+              {
+                "x": 390.0,
+                "y": 120.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 2,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 4,
+            "net": 4,
+            "points": [
+              {
+                "x": 490.0,
+                "y": 100.0
+              },
+              {
+                "x": 555.0,
+                "y": 100.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Sum"
+            },
+            "end": null
+          },
+          {
+            "id": 5,
+            "net": 5,
+            "points": [
+              {
+                "x": 610.0,
+                "y": 230.0
+              },
+              {
+                "x": 675.0,
+                "y": 230.0
+              }
+            ],
+            "start": {
+              "gate": 3,
+              "pin": "Z"
+            },
+            "end": null
+          },
+          {
+            "id": 6,
+            "net": 6,
+            "points": [
+              {
+                "x": 270.0,
+                "y": 100.0
+              },
+              {
+                "x": 330.0,
+                "y": 100.0
+              },
+              {
+                "x": 330.0,
+                "y": 100.0
+              },
+              {
+                "x": 390.0,
+                "y": 100.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Sum"
+            },
+            "end": {
+              "gate": 2,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 7,
+            "net": 7,
+            "points": [
+              {
+                "x": 270.0,
+                "y": 120.0
+              },
+              {
+                "x": 429.5,
+                "y": 120.0
+              },
+              {
+                "x": 429.5,
+                "y": 227.5
+              },
+              {
+                "x": 589.0,
+                "y": 227.5
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Carry"
+            },
+            "end": {
+              "gate": 3,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 8,
+            "net": 8,
+            "points": [
+              {
+                "x": 490.0,
+                "y": 120.0
+              },
+              {
+                "x": 539.5,
+                "y": 120.0
+              },
+              {
+                "x": 539.5,
+                "y": 232.5
+              },
+              {
+                "x": 589.0,
+                "y": 232.5
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Carry"
+            },
+            "end": {
+              "gate": 3,
+              "pin": "I1"
+            }
+          }
+        ]
+      },
+      {
+        "name": "adder4",
+        "gates": [
+          {
+            "id": 1,
+            "name": "split_A",
+            "kind": "splitter",
+            "position": {
+              "x": 160.0,
+              "y": 300.0
+            },
+            "rotation": 0,
+            "width": 4,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low",
+                "Low",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": 0.0
+                },
+                "net": 1,
+                "width": 4
+              },
+              {
+                "name": "Z0",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": -24.0
+                },
+                "net": 6,
+                "width": 1
+              },
+              {
+                "name": "Z1",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": -8.0
+                },
+                "net": 10,
+                "width": 1
+              },
+              {
+                "name": "Z2",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": 8.0
+                },
+                "net": 14,
+                "width": 1
+              },
+              {
+                "name": "Z3",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": 24.0
+                },
+                "net": 18,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 2,
+            "name": "split_B",
+            "kind": "splitter",
+            "position": {
+              "x": 320.0,
+              "y": 300.0
+            },
+            "rotation": 0,
+            "width": 4,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low",
+                "Low",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": 0.0
+                },
+                "net": 2,
+                "width": 4
+              },
+              {
+                "name": "Z0",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": -24.0
+                },
+                "net": 7,
+                "width": 1
+              },
+              {
+                "name": "Z1",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": -8.0
+                },
+                "net": 11,
+                "width": 1
+              },
+              {
+                "name": "Z2",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": 8.0
+                },
+                "net": 15,
+                "width": 1
+              },
+              {
+                "name": "Z3",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": 24.0
+                },
+                "net": 19,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 3,
+            "name": "join_Sum",
+            "kind": "concat",
+            "position": {
+              "x": 690.0,
+              "y": 300.0
+            },
+            "rotation": 0,
+            "width": 4,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low",
+                "Low",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": -24.0
+                },
+                "net": 8,
+                "width": 1
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": -8.0
+                },
+                "net": 12,
+                "width": 1
+              },
+              {
+                "name": "I2",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": 8.0
+                },
+                "net": 16,
+                "width": 1
+              },
+              {
+                "name": "I3",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": 24.0
+                },
+                "net": 20,
+                "width": 1
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": 0.0
+                },
+                "net": 4,
+                "width": 4
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 4,
+            "name": "stage0",
+            "kind": {
+              "module": "full_adder"
+            },
+            "position": {
+              "x": 510.0,
+              "y": 90.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -20.0
+                },
+                "net": 6,
+                "width": 1
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 0.0
+                },
+                "net": 7,
+                "width": 1
+              },
+              {
+                "name": "Cin",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 20.0
+                },
+                "net": 3,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 8,
+                "width": 1
+              },
+              {
+                "name": "Cout",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 9,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 5,
+            "name": "stage1",
+            "kind": {
+              "module": "full_adder"
+            },
+            "position": {
+              "x": 510.0,
+              "y": 230.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -20.0
+                },
+                "net": 10,
+                "width": 1
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 0.0
+                },
+                "net": 11,
+                "width": 1
+              },
+              {
+                "name": "Cin",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 20.0
+                },
+                "net": 9,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 12,
+                "width": 1
+              },
+              {
+                "name": "Cout",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 13,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 6,
+            "name": "stage2",
+            "kind": {
+              "module": "full_adder"
+            },
+            "position": {
+              "x": 510.0,
+              "y": 370.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -20.0
+                },
+                "net": 14,
+                "width": 1
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 0.0
+                },
+                "net": 15,
+                "width": 1
+              },
+              {
+                "name": "Cin",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 20.0
+                },
+                "net": 13,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 16,
+                "width": 1
+              },
+              {
+                "name": "Cout",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 17,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 7,
+            "name": "stage3",
+            "kind": {
+              "module": "full_adder"
+            },
+            "position": {
+              "x": 510.0,
+              "y": 510.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -20.0
+                },
+                "net": 18,
+                "width": 1
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 0.0
+                },
+                "net": 19,
+                "width": 1
+              },
+              {
+                "name": "Cin",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 20.0
+                },
+                "net": 17,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 20,
+                "width": 1
+              },
+              {
+                "name": "Cout",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 5,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 8,
+            "name": "guide",
+            "kind": "comment",
+            "position": {
+              "x": 80.0,
+              "y": 660.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [],
+            "text": "4-BIT RIPPLE ADDER — 4 x full_adder\nStage 0 is least significant. Carry flows from top to bottom.\nSplitters/concatenation only route bits; all arithmetic is in the child modules.",
+            "show_name": false,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          }
+        ],
+        "nets": [
+          {
+            "id": 1,
+            "name": "A",
+            "width": 4,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 2,
+            "name": "B",
+            "width": 4,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 3,
+            "name": "Cin",
+            "width": 1,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 4,
+            "name": "Sum",
+            "width": 4,
+            "show_name": true,
+            "port": "output"
+          },
+          {
+            "id": 5,
+            "name": "Cout",
+            "width": 1,
+            "show_name": true,
+            "port": "output"
+          },
+          {
+            "id": 6,
+            "name": "A_0",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 7,
+            "name": "B_0",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 8,
+            "name": "Sum_0",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 9,
+            "name": "carry_1",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 10,
+            "name": "A_1",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 11,
+            "name": "B_1",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 12,
+            "name": "Sum_1",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 13,
+            "name": "carry_2",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 14,
+            "name": "A_2",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 15,
+            "name": "B_2",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 16,
+            "name": "Sum_2",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 17,
+            "name": "carry_3",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 18,
+            "name": "A_3",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 19,
+            "name": "B_3",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 20,
+            "name": "Sum_3",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          }
+        ],
+        "wires": [
+          {
+            "id": 1,
+            "net": 1,
+            "points": [
+              {
+                "x": 50.0,
+                "y": 300.0
+              },
+              {
+                "x": 82.5,
+                "y": 300.0
+              },
+              {
+                "x": 82.5,
+                "y": 300.0
+              },
+              {
+                "x": 115.0,
+                "y": 300.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 1,
+              "pin": "I"
+            }
+          },
+          {
+            "id": 2,
+            "net": 2,
+            "points": [
+              {
+                "x": 210.0,
+                "y": 300.0
+              },
+              {
+                "x": 242.5,
+                "y": 300.0
+              },
+              {
+                "x": 242.5,
+                "y": 300.0
+              },
+              {
+                "x": 275.0,
+                "y": 300.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 2,
+              "pin": "I"
+            }
+          },
+          {
+            "id": 3,
+            "net": 3,
+            "points": [
+              {
+                "x": 395.0,
+                "y": 110.0
+              },
+              {
+                "x": 427.5,
+                "y": 110.0
+              },
+              {
+                "x": 427.5,
+                "y": 110.0
+              },
+              {
+                "x": 460.0,
+                "y": 110.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 4,
+              "pin": "Cin"
+            }
+          },
+          {
+            "id": 4,
+            "net": 4,
+            "points": [
+              {
+                "x": 735.0,
+                "y": 300.0
+              },
+              {
+                "x": 800.0,
+                "y": 300.0
+              }
+            ],
+            "start": {
+              "gate": 3,
+              "pin": "Z"
+            },
+            "end": null
+          },
+          {
+            "id": 5,
+            "net": 5,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 520.0
+              },
+              {
+                "x": 625.0,
+                "y": 520.0
+              }
+            ],
+            "start": {
+              "gate": 7,
+              "pin": "Cout"
+            },
+            "end": null
+          },
+          {
+            "id": 6,
+            "net": 6,
+            "points": [
+              {
+                "x": 205.0,
+                "y": 276.0
+              },
+              {
+                "x": 332.5,
+                "y": 276.0
+              },
+              {
+                "x": 332.5,
+                "y": 70.0
+              },
+              {
+                "x": 460.0,
+                "y": 70.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z0"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 7,
+            "net": 7,
+            "points": [
+              {
+                "x": 365.0,
+                "y": 276.0
+              },
+              {
+                "x": 412.5,
+                "y": 276.0
+              },
+              {
+                "x": 412.5,
+                "y": 90.0
+              },
+              {
+                "x": 460.0,
+                "y": 90.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z0"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 8,
+            "net": 8,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 80.0
+              },
+              {
+                "x": 602.5,
+                "y": 80.0
+              },
+              {
+                "x": 602.5,
+                "y": 276.0
+              },
+              {
+                "x": 645.0,
+                "y": 276.0
+              }
+            ],
+            "start": {
+              "gate": 4,
+              "pin": "Sum"
+            },
+            "end": {
+              "gate": 3,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 9,
+            "net": 9,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 100.0
+              },
+              {
+                "x": 585.0,
+                "y": 100.0
+              },
+              {
+                "x": 585.0,
+                "y": 250.0
+              },
+              {
+                "x": 460.0,
+                "y": 250.0
+              }
+            ],
+            "start": {
+              "gate": 4,
+              "pin": "Cout"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "Cin"
+            }
+          },
+          {
+            "id": 10,
+            "net": 10,
+            "points": [
+              {
+                "x": 205.0,
+                "y": 292.0
+              },
+              {
+                "x": 332.5,
+                "y": 292.0
+              },
+              {
+                "x": 332.5,
+                "y": 210.0
+              },
+              {
+                "x": 460.0,
+                "y": 210.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z1"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 11,
+            "net": 11,
+            "points": [
+              {
+                "x": 365.0,
+                "y": 292.0
+              },
+              {
+                "x": 412.5,
+                "y": 292.0
+              },
+              {
+                "x": 412.5,
+                "y": 230.0
+              },
+              {
+                "x": 460.0,
+                "y": 230.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z1"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 12,
+            "net": 12,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 220.0
+              },
+              {
+                "x": 602.5,
+                "y": 220.0
+              },
+              {
+                "x": 602.5,
+                "y": 292.0
+              },
+              {
+                "x": 645.0,
+                "y": 292.0
+              }
+            ],
+            "start": {
+              "gate": 5,
+              "pin": "Sum"
+            },
+            "end": {
+              "gate": 3,
+              "pin": "I1"
+            }
+          },
+          {
+            "id": 13,
+            "net": 13,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 240.0
+              },
+              {
+                "x": 585.0,
+                "y": 240.0
+              },
+              {
+                "x": 585.0,
+                "y": 390.0
+              },
+              {
+                "x": 460.0,
+                "y": 390.0
+              }
+            ],
+            "start": {
+              "gate": 5,
+              "pin": "Cout"
+            },
+            "end": {
+              "gate": 6,
+              "pin": "Cin"
+            }
+          },
+          {
+            "id": 14,
+            "net": 14,
+            "points": [
+              {
+                "x": 205.0,
+                "y": 308.0
+              },
+              {
+                "x": 332.5,
+                "y": 308.0
+              },
+              {
+                "x": 332.5,
+                "y": 350.0
+              },
+              {
+                "x": 460.0,
+                "y": 350.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z2"
+            },
+            "end": {
+              "gate": 6,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 15,
+            "net": 15,
+            "points": [
+              {
+                "x": 365.0,
+                "y": 308.0
+              },
+              {
+                "x": 412.5,
+                "y": 308.0
+              },
+              {
+                "x": 412.5,
+                "y": 370.0
+              },
+              {
+                "x": 460.0,
+                "y": 370.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z2"
+            },
+            "end": {
+              "gate": 6,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 16,
+            "net": 16,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 360.0
+              },
+              {
+                "x": 602.5,
+                "y": 360.0
+              },
+              {
+                "x": 602.5,
+                "y": 308.0
+              },
+              {
+                "x": 645.0,
+                "y": 308.0
+              }
+            ],
+            "start": {
+              "gate": 6,
+              "pin": "Sum"
+            },
+            "end": {
+              "gate": 3,
+              "pin": "I2"
+            }
+          },
+          {
+            "id": 17,
+            "net": 17,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 380.0
+              },
+              {
+                "x": 585.0,
+                "y": 380.0
+              },
+              {
+                "x": 585.0,
+                "y": 530.0
+              },
+              {
+                "x": 460.0,
+                "y": 530.0
+              }
+            ],
+            "start": {
+              "gate": 6,
+              "pin": "Cout"
+            },
+            "end": {
+              "gate": 7,
+              "pin": "Cin"
+            }
+          },
+          {
+            "id": 18,
+            "net": 18,
+            "points": [
+              {
+                "x": 205.0,
+                "y": 324.0
+              },
+              {
+                "x": 332.5,
+                "y": 324.0
+              },
+              {
+                "x": 332.5,
+                "y": 490.0
+              },
+              {
+                "x": 460.0,
+                "y": 490.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z3"
+            },
+            "end": {
+              "gate": 7,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 19,
+            "net": 19,
+            "points": [
+              {
+                "x": 365.0,
+                "y": 324.0
+              },
+              {
+                "x": 412.5,
+                "y": 324.0
+              },
+              {
+                "x": 412.5,
+                "y": 510.0
+              },
+              {
+                "x": 460.0,
+                "y": 510.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z3"
+            },
+            "end": {
+              "gate": 7,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 20,
+            "net": 20,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 500.0
+              },
+              {
+                "x": 602.5,
+                "y": 500.0
+              },
+              {
+                "x": 602.5,
+                "y": 324.0
+              },
+              {
+                "x": 645.0,
+                "y": 324.0
+              }
+            ],
+            "start": {
+              "gate": 7,
+              "pin": "Sum"
+            },
+            "end": {
+              "gate": 3,
+              "pin": "I3"
+            }
+          }
+        ]
+      },
+      {
+        "name": "adder8",
+        "gates": [
+          {
+            "id": 1,
+            "name": "split_A",
+            "kind": "splitter",
+            "position": {
+              "x": 160.0,
+              "y": 160.0
+            },
+            "rotation": 0,
+            "width": 8,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": 0.0
+                },
+                "net": 1,
+                "width": 8
+              },
+              {
+                "name": "Z0",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": -8.0
+                },
+                "net": 6,
+                "width": 4
+              },
+              {
+                "name": "Z1",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": 8.0
+                },
+                "net": 10,
+                "width": 4
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [
+                4,
+                4
+              ],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 2,
+            "name": "split_B",
+            "kind": "splitter",
+            "position": {
+              "x": 320.0,
+              "y": 160.0
+            },
+            "rotation": 0,
+            "width": 8,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": 0.0
+                },
+                "net": 2,
+                "width": 8
+              },
+              {
+                "name": "Z0",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": -8.0
+                },
+                "net": 7,
+                "width": 4
+              },
+              {
+                "name": "Z1",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": 8.0
+                },
+                "net": 11,
+                "width": 4
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [
+                4,
+                4
+              ],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 3,
+            "name": "join_Sum",
+            "kind": "concat",
+            "position": {
+              "x": 690.0,
+              "y": 160.0
+            },
+            "rotation": 0,
+            "width": 8,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low",
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "I0",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": -8.0
+                },
+                "net": 8,
+                "width": 4
+              },
+              {
+                "name": "I1",
+                "direction": "input",
+                "offset": {
+                  "x": -45.0,
+                  "y": 8.0
+                },
+                "net": 12,
+                "width": 4
+              },
+              {
+                "name": "Z",
+                "direction": "output",
+                "offset": {
+                  "x": 45.0,
+                  "y": 0.0
+                },
+                "net": 4,
+                "width": 8
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [
+                4,
+                4
+              ],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 4,
+            "name": "stage0",
+            "kind": {
+              "module": "adder4"
+            },
+            "position": {
+              "x": 510.0,
+              "y": 90.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -20.0
+                },
+                "net": 6,
+                "width": 4
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 0.0
+                },
+                "net": 7,
+                "width": 4
+              },
+              {
+                "name": "Cin",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 20.0
+                },
+                "net": 3,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 8,
+                "width": 4
+              },
+              {
+                "name": "Cout",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 9,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 5,
+            "name": "stage1",
+            "kind": {
+              "module": "adder4"
+            },
+            "position": {
+              "x": 510.0,
+              "y": 230.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [
+              {
+                "name": "A",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": -20.0
+                },
+                "net": 10,
+                "width": 4
+              },
+              {
+                "name": "B",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 0.0
+                },
+                "net": 11,
+                "width": 4
+              },
+              {
+                "name": "Cin",
+                "direction": "input",
+                "offset": {
+                  "x": -50.0,
+                  "y": 20.0
+                },
+                "net": 9,
+                "width": 1
+              },
+              {
+                "name": "Sum",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": -10.0
+                },
+                "net": 12,
+                "width": 4
+              },
+              {
+                "name": "Cout",
+                "direction": "output",
+                "offset": {
+                  "x": 50.0,
+                  "y": 10.0
+                },
+                "net": 5,
+                "width": 1
+              }
+            ],
+            "text": "",
+            "show_name": true,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          },
+          {
+            "id": 6,
+            "name": "guide",
+            "kind": "comment",
+            "position": {
+              "x": 80.0,
+              "y": 380.0
+            },
+            "rotation": 0,
+            "width": 1,
+            "input_count": 2,
+            "delay": 4,
+            "period": 100,
+            "initial": {
+              "bits": [
+                "Low"
+              ]
+            },
+            "pins": [],
+            "text": "8-BIT RIPPLE ADDER — 2 x adder4\nStage 0 is least significant. Carry flows from top to bottom.\nSplitters/concatenation only route bits; all arithmetic is in the child modules.",
+            "show_name": false,
+            "config": {
+              "partitions": [],
+              "led_display": "bit",
+              "tap_offset": 0,
+              "tap_width": 1,
+              "address_bits": 8,
+              "tty_tkgate": false,
+              "reduction": false,
+              "enable_low": false,
+              "invert_output": false,
+              "clock_phase": 0,
+              "clock_duty": 50,
+              "operand_a_width": null,
+              "operand_b_width": null,
+              "frame_width": 240.0,
+              "frame_height": 160.0,
+              "module_width": 100.0,
+              "custom_symbol": [],
+              "custom_ports": {},
+              "sparse_memory": {},
+              "memory": []
+            }
+          }
+        ],
+        "nets": [
+          {
+            "id": 1,
+            "name": "A",
+            "width": 8,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 2,
+            "name": "B",
+            "width": 8,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 3,
+            "name": "Cin",
+            "width": 1,
+            "show_name": true,
+            "port": "input"
+          },
+          {
+            "id": 4,
+            "name": "Sum",
+            "width": 8,
+            "show_name": true,
+            "port": "output"
+          },
+          {
+            "id": 5,
+            "name": "Cout",
+            "width": 1,
+            "show_name": true,
+            "port": "output"
+          },
+          {
+            "id": 6,
+            "name": "A_0",
+            "width": 4,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 7,
+            "name": "B_0",
+            "width": 4,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 8,
+            "name": "Sum_0",
+            "width": 4,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 9,
+            "name": "carry_4",
+            "width": 1,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 10,
+            "name": "A_1",
+            "width": 4,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 11,
+            "name": "B_1",
+            "width": 4,
+            "show_name": true,
+            "port": null
+          },
+          {
+            "id": 12,
+            "name": "Sum_1",
+            "width": 4,
+            "show_name": true,
+            "port": null
+          }
+        ],
+        "wires": [
+          {
+            "id": 1,
+            "net": 1,
+            "points": [
+              {
+                "x": 50.0,
+                "y": 160.0
+              },
+              {
+                "x": 82.5,
+                "y": 160.0
+              },
+              {
+                "x": 82.5,
+                "y": 160.0
+              },
+              {
+                "x": 115.0,
+                "y": 160.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 1,
+              "pin": "I"
+            }
+          },
+          {
+            "id": 2,
+            "net": 2,
+            "points": [
+              {
+                "x": 210.0,
+                "y": 160.0
+              },
+              {
+                "x": 242.5,
+                "y": 160.0
+              },
+              {
+                "x": 242.5,
+                "y": 160.0
+              },
+              {
+                "x": 275.0,
+                "y": 160.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 2,
+              "pin": "I"
+            }
+          },
+          {
+            "id": 3,
+            "net": 3,
+            "points": [
+              {
+                "x": 395.0,
+                "y": 110.0
+              },
+              {
+                "x": 427.5,
+                "y": 110.0
+              },
+              {
+                "x": 427.5,
+                "y": 110.0
+              },
+              {
+                "x": 460.0,
+                "y": 110.0
+              }
+            ],
+            "start": null,
+            "end": {
+              "gate": 4,
+              "pin": "Cin"
+            }
+          },
+          {
+            "id": 4,
+            "net": 4,
+            "points": [
+              {
+                "x": 735.0,
+                "y": 160.0
+              },
+              {
+                "x": 800.0,
+                "y": 160.0
+              }
+            ],
+            "start": {
+              "gate": 3,
+              "pin": "Z"
+            },
+            "end": null
+          },
+          {
+            "id": 5,
+            "net": 5,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 240.0
+              },
+              {
+                "x": 625.0,
+                "y": 240.0
+              }
+            ],
+            "start": {
+              "gate": 5,
+              "pin": "Cout"
+            },
+            "end": null
+          },
+          {
+            "id": 6,
+            "net": 6,
+            "points": [
+              {
+                "x": 205.0,
+                "y": 152.0
+              },
+              {
+                "x": 332.5,
+                "y": 152.0
+              },
+              {
+                "x": 332.5,
+                "y": 70.0
+              },
+              {
+                "x": 460.0,
+                "y": 70.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z0"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 7,
+            "net": 7,
+            "points": [
+              {
+                "x": 365.0,
+                "y": 152.0
+              },
+              {
+                "x": 412.5,
+                "y": 152.0
+              },
+              {
+                "x": 412.5,
+                "y": 90.0
+              },
+              {
+                "x": 460.0,
+                "y": 90.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z0"
+            },
+            "end": {
+              "gate": 4,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 8,
+            "net": 8,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 80.0
+              },
+              {
+                "x": 602.5,
+                "y": 80.0
+              },
+              {
+                "x": 602.5,
+                "y": 152.0
+              },
+              {
+                "x": 645.0,
+                "y": 152.0
+              }
+            ],
+            "start": {
+              "gate": 4,
+              "pin": "Sum"
+            },
+            "end": {
+              "gate": 3,
+              "pin": "I0"
+            }
+          },
+          {
+            "id": 9,
+            "net": 9,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 100.0
+              },
+              {
+                "x": 585.0,
+                "y": 100.0
+              },
+              {
+                "x": 585.0,
+                "y": 250.0
+              },
+              {
+                "x": 460.0,
+                "y": 250.0
+              }
+            ],
+            "start": {
+              "gate": 4,
+              "pin": "Cout"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "Cin"
+            }
+          },
+          {
+            "id": 10,
+            "net": 10,
+            "points": [
+              {
+                "x": 205.0,
+                "y": 168.0
+              },
+              {
+                "x": 332.5,
+                "y": 168.0
+              },
+              {
+                "x": 332.5,
+                "y": 210.0
+              },
+              {
+                "x": 460.0,
+                "y": 210.0
+              }
+            ],
+            "start": {
+              "gate": 1,
+              "pin": "Z1"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "A"
+            }
+          },
+          {
+            "id": 11,
+            "net": 11,
+            "points": [
+              {
+                "x": 365.0,
+                "y": 168.0
+              },
+              {
+                "x": 412.5,
+                "y": 168.0
+              },
+              {
+                "x": 412.5,
+                "y": 230.0
+              },
+              {
+                "x": 460.0,
+                "y": 230.0
+              }
+            ],
+            "start": {
+              "gate": 2,
+              "pin": "Z1"
+            },
+            "end": {
+              "gate": 5,
+              "pin": "B"
+            }
+          },
+          {
+            "id": 12,
+            "net": 12,
+            "points": [
+              {
+                "x": 560.0,
+                "y": 220.0
+              },
+              {
+                "x": 602.5,
+                "y": 220.0
+              },
+              {
+                "x": 602.5,
+                "y": 168.0
+              },
+              {
+                "x": 645.0,
+                "y": 168.0
+              }
+            ],
+            "start": {
+              "gate": 5,
+              "pin": "Sum"
+            },
+            "end": {
+              "gate": 3,
+              "pin": "I1"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,82 @@
+RGate is an independent Rust/GPUI reimplementation inspired by TkGate.
+RGate application code is licensed under GPL-3.0-or-later; see LICENSE.
+It is not an official TkGate release and is distributed without warranty.
+
+TkGate-derived Classic artwork
+------------------------------
+Classic gate silhouettes and colored control illustrations were recreated as
+vectors using TkGate images as reference. They are not claimed to be wholly
+independent artwork. Original reference artwork: copyright Jeffery P. Hansen
+and TkGate contributors, GPL-2.0-or-later. RGate's adaptations are distributed
+under GPL-3.0-or-later. The refreshed documentation screenshots show those
+adaptations wherever Classic artwork is visible.
+Source reference: https://github.com/bnoordhuis/tkgate
+Revision: 856c40542d3ee5ab0c23cb86a2a4ca0ba623619f
+License: licenses/TKGATE-GPL-2.0-or-later
+Original bitmap/source/example/logo files are no longer bundled. The RGate
+application mark and macOS icon are original RGate artwork.
+
+GPUI
+----
+GPUI is provided by the Zed Industries project under Apache License 2.0.
+Published GPUI snapshot packages: gpui-pre, gpui-pre-platform and gpui-pre-web 0.3.8.
+These releases are provided by the GPUI Kit ecosystem from Zed GPUI sources.
+Packages are fetched from crates.io; no vendored source or local patches.
+License text: licenses/GPUI-APACHE-2.0
+
+Other Rust dependencies retain their own licenses and notices, as listed
+in their package manifests in the Cargo registry. Cargo.lock pins the
+resolved dependency graph. When distributing binaries, retain applicable
+third-party notices and provide corresponding source as required by GPLv3.
+
+Browser fonts
+-------------
+IBM Plex Sans: Copyright 2017 IBM Corp.; SIL Open Font License 1.1.
+Lilex: Copyright 2019 The Lilex Project Authors; SIL Open Font License 1.1.
+Noto Sans Symbols 2 and Noto Sans Math: SIL Open Font License 1.1.
+Original license texts are retained in assets/fonts/*LICENSE.txt and included
+in web distribution licenses/. Fonts are embedded for browser text rendering.
+
+Downloaded HDL evaluation examples (examples/verilog):
+- Project F display_480p, LFSR and PWM, Copyright 2020-2022 Will Green, MIT.
+  https://github.com/projf/projf-explore (license retained in projectf/LICENSE).
+- verilog-uart, Copyright 2014-2017 Alex Forencich, MIT.
+  https://github.com/alexforencich/verilog-uart (license retained in uart/LICENSE and source headers).
+- PicoRV32, Copyright 2015 Claire Xenia Wolf, ISC.
+  https://github.com/YosysHQ/picorv32 (license retained in picorv32/COPYING).
+Exact revisions and downloaded-file SHA-256 hashes are in examples/verilog/sources.json.
+The optional xezim dependency is pinned in crates/rgate-hdl/Cargo.toml;
+its upstream license is retained by Cargo's source checkout (Apache-2.0 LICENSE).
+
+Native code editor: gpui-component 0.7.1 and gpui-base 0.7.1 from
+https://github.com/longbridge/gpui-kit, Apache-2.0. Published crates.io
+packages; no vendored component code or Zed internal editor dependencies.
+Verilog grammar: tree-sitter-verilog 1.0.3 (MIT, Cargo dependency).
+
+GPUI Kit bundled icons
+----------------------
+GPUI Kit's embedded Lucide icon catalog includes Feather-derived icons.
+Lucide Icons and Contributors: ISC; Feather portions: MIT.
+Copyright statements and icon list: licenses/LUCIDE-FEATHER-LICENSE.
+GPUI Component/Base: Apache-2.0, licenses/GPUI-KIT-APACHE-2.0.
+
+File-level copyleft dependencies
+-------------------------------
+option-ext 0.2.0 (runtime dependency), cbindgen 0.28.0 (build tool), and
+platform-dependent dwrote 0.11.5 declare MPL-2.0. These files keep their own
+license; MPL does not relicense the whole application. MPL text:
+licenses/MPL-2.0. Source packages are available through their Cargo package
+sources and the exact versions in Cargo.lock. When distributing binaries,
+provide the MPL-covered source or inform recipients how to obtain it, and
+retain applicable notices; modifications to covered files remain covered.
+
+Distribution license inventory
+------------------------------
+Build helpers generate THIRD-PARTY-LICENSES.txt and
+THIRD-PARTY-PACKAGES.json from the resolved Cargo metadata, including license
+expressions, source locations, and available packaged license/notice texts.
+Packages without a packaged license text are identified explicitly; their
+manifest and README are included for review. This inventory is not a legal
+opinion or a substitute for reviewing notices in native/transitive sources.
+GPL distribution must also provide corresponding source and build materials;
+a binary plus license texts alone does not satisfy that obligation.

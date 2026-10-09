@@ -1,0 +1,133 @@
+{
+  "top": "uart_demo",
+  "sources": [
+    "uart/uart.v",
+    "uart/uart_rx.v",
+    "uart/uart_tx.v",
+    "harnesses/uart.sv"
+  ],
+  "signals": [
+    {
+      "path": "reset",
+      "width": 1,
+      "input": true
+    },
+    {
+      "path": "tx_data",
+      "width": 8,
+      "input": true
+    },
+    {
+      "path": "tx_valid",
+      "width": 1,
+      "input": true
+    },
+    {
+      "path": "rx_ready",
+      "width": 1,
+      "input": true
+    },
+    {
+      "path": "rx_data",
+      "width": 8,
+      "input": false
+    },
+    {
+      "path": "rx_valid",
+      "width": 1,
+      "input": false
+    },
+    {
+      "path": "serial",
+      "width": 1,
+      "input": false
+    },
+    {
+      "path": "serial_port.uart_tx_inst.busy_reg",
+      "width": 1,
+      "input": false
+    },
+    {
+      "path": "overrun",
+      "width": 1,
+      "input": false
+    },
+    {
+      "path": "frame_error",
+      "width": 1,
+      "input": false
+    }
+  ],
+  "actions": [
+    {
+      "action": "probe",
+      "signal": "serial"
+    },
+    {
+      "action": "advance",
+      "ns": 20
+    },
+    {
+      "action": "set",
+      "signal": "reset",
+      "bits": "0"
+    },
+    {
+      "action": "set",
+      "signal": "tx_data",
+      "bits": "01001000"
+    },
+    {
+      "action": "set",
+      "signal": "tx_valid",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 20
+    },
+    {
+      "action": "set",
+      "signal": "tx_valid",
+      "bits": "0"
+    },
+    {
+      "action": "advance",
+      "ns": 1800
+    },
+    {
+      "action": "check",
+      "signal": "rx_valid",
+      "bits": "1"
+    },
+    {
+      "action": "check",
+      "signal": "rx_data",
+      "bits": "01001000"
+    },
+    {
+      "action": "check",
+      "signal": "overrun",
+      "bits": "0"
+    },
+    {
+      "action": "check",
+      "signal": "frame_error",
+      "bits": "0"
+    },
+    {
+      "action": "set",
+      "signal": "rx_ready",
+      "bits": "1"
+    },
+    {
+      "action": "advance",
+      "ns": 20
+    },
+    {
+      "action": "check",
+      "signal": "rx_valid",
+      "bits": "0"
+    }
+  ]
+}
