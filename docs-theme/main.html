@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{ config.site_description }}">
+  <title>{% if page and not page.is_homepage %}{{ page.title }} · {% endif %}RGate — Digital circuit design</title>
+  <link rel="icon" href="{{ 'gate.svg' | url }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ 'style.css' | url }}">
+  {% for path in config.extra_css %}<link rel="stylesheet" href="{{ path | url }}">{% endfor %}
+</head>
+<body id="top">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <div class="site">
+    <header class="masthead">
+      <a class="brand" href="{{ nav.homepage.url | url }}">
+        <img src="{{ 'gate.svg' | url }}" width="64" height="54" alt="">
+        <span><strong>RGate</strong><span class="tagline">Digital circuits. Open source. Endless possibilities.</span></span>
+      </a>
+      <span class="masthead-note">A spiritual successor to TkGate<br>Draw · Simulate · Explore</span>
+    </header>
+    <nav class="top-nav" aria-label="Project">
+      <a href="{{ nav.homepage.url | url }}"{% if page and page.is_homepage %} aria-current="page"{% endif %}>Home</a>
+      <a href="{{ 'guides/getting-started/' | url }}">Documentation</a>
+      <a href="{{ 'examples/' | url }}">Example circuits</a>
+      <a href="{{ config.repo_url }}">Source code ↗</a>
+      <a href="{{ config.repo_url }}/issues">Bug tracker ↗</a>
+      <a class="try-link" href="https://rumpl.github.io/rgate/app/">Launch RGate ↗</a>
+    </nav>
+    <div class="layout">
+      <aside class="sidebar">
+        <details class="navigation" open>
+          <summary>Documentation index</summary>
+          <div class="navigation-body">
+            <section class="search-box" aria-label="Search documentation">
+              <label for="mkdocs-search-query">Search the manual</label>
+              <input id="mkdocs-search-query" type="search" placeholder="e.g. gates, waveforms" autocomplete="off">
+              <div id="mkdocs-search-results" aria-live="polite" data-no-results-text="No matching pages. Try another term."></div>
+            </section>
+            <nav aria-label="Documentation">
+              {% for item in nav %}
+                {% if item.children %}
+                  <section class="nav-section">
+                    <h2>{{ item.title }}</h2>
+                    <ul>
+                      {% for child in item.children %}
+                        <li><a href="{{ child.url | url }}"{% if child.active %} aria-current="page"{% endif %}>{{ child.title }}</a></li>
+                      {% endfor %}
+                    </ul>
+                  </section>
+                {% elif not item.is_link %}
+                  <p class="nav-home"><a href="{{ item.url | url }}"{% if item.active %} aria-current="page"{% endif %}>{{ item.title }}</a></p>
+                {% endif %}
+              {% endfor %}
+            </nav>
+            <section class="project-note">
+              <h2>About the project</h2>
+              <p>Inspired by <a href="https://tkgate.sourceforge.net/">TkGate</a>, built for a new generation of circuit tinkerers.</p>
+              <a href="{{ config.repo_url }}">Browse the source →</a>
+            </section>
+          </div>
+        </details>
+      </aside>
+      <main id="content" tabindex="-1">
+        {% block content %}
+          {% if page and not page.is_homepage %}
+            <div class="page-heading"><a href="{{ nav.homepage.url | url }}">RGate</a> / User documentation</div>
+          {% endif %}
+          <article class="document{% if page and page.is_homepage %} home{% endif %}">{{ page.content }}</article>
+          {% if page and not page.is_homepage %}
+            <nav class="page-nav" aria-label="Previous and next pages">
+              <span>{% if page.previous_page %}<a href="{{ page.previous_page.url | url }}">← {{ page.previous_page.title }}</a>{% endif %}</span>
+              <span>{% if page.next_page %}<a href="{{ page.next_page.url | url }}">{{ page.next_page.title }} →</a>{% endif %}</span>
+            </nav>
+          {% endif %}
+        {% endblock %}
+      </main>
+    </div>
+    <footer>
+      <span><strong>RGate</strong> · Free &amp; open-source digital circuit design · <a href="{{ config.repo_url }}/blob/main/LICENSE">GPL-3.0</a></span>
+      <span>Built with <a href="https://www.mkdocs.org/">MkDocs</a> · <a href="#top">Back to top ↑</a></span>
+    </footer>
+  </div>
+  <script>var base_url = {{ base_url | tojson }};</script>
+  <script src="{{ 'site.js' | url }}"></script>
+  {% for script in config.extra_javascript %}{{ script | script_tag }}{% endfor %}
+</body>
+</html>

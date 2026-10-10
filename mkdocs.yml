@@ -14,24 +14,13 @@ hooks:
   - scripts/docs-links.py
 
 theme:
-  name: material
-  features:
-    - navigation.sections
-    - navigation.top
-    - search.suggest
-    - search.highlight
-    - content.code.copy
-  palette:
-    - scheme: default
-      primary: indigo
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    - scheme: slate
-      primary: indigo
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to light mode
+  name: null
+  custom_dir: docs-theme
+  static_templates:
+    - 404.html
+
+watch:
+  - docs-theme
 
 plugins:
   - search
@@ -39,6 +28,7 @@ plugins:
 markdown_extensions:
   - tables
   - fenced_code
+  - md_in_html
   - toc:
       permalink: true
 

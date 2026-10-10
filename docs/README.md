@@ -1,36 +1,75 @@
-# RGate user documentation
+# Welcome to RGate
 
-Build digital circuits, write Verilog modules, and explore how signals move
-through your design. RGate brings schematic editing, live simulation, module
-hierarchies, displays, and waveforms into one workspace.
+<div class="intro" markdown="1">
 
-**[Try it out in your browser](https://rumpl.github.io/rgate/app/)** to draw and
-simulate schematics. Use the desktop app to edit and run Verilog modules.
+A place to build, explore, and understand digital circuits. RGate is a spiritual
+successor to [TkGate](https://tkgate.sourceforge.net/), carrying on the tradition
+of hands-on, open-source circuit design.
 
-![RGate editor showing the full-adder example](images/editor.png)
+Draw a schematic, connect some gates, and see what happens. From your first
+AND gate to a working computer, there's plenty to explore.
 
-## Start here
+</div>
 
-- [Getting started](guides/getting-started.md): open a circuit and build your
-  first design.
-- [Using the interface](guides/interface.md): tools, panels, wiring, and
-  arrangement.
-- [Verilog modules](guides/verilog-modules.md): write source, connect ports, and
-  run it.
-- [Modules and symbols](guides/modules.md): reuse circuits and inspect their
-  instances.
-- [Simulation](guides/simulation.md): run, pause, step, and change inputs.
-- [Waveforms](guides/waveforms.md): record signals and measure timing.
-- [Files and recovery](guides/files-and-workspace.md): save designs and restore
-  your workspace.
-- [Component reference](components/README.md): pins, controls, and worked
-  examples.
-- [Example circuits](examples/README.md): counters, an LC-3 computer, and a VGA
-  display.
-- [Shortcuts](reference/shortcuts.md) and
-  [troubleshooting](reference/troubleshooting.md).
+<div class="project-actions" markdown="1">
 
-## Reading the reference
+[Try it in your browser](https://rumpl.github.io/rgate/app/)
+[Getting started](guides/getting-started.md)
+[Get the source](https://github.com/rumpl/rgate)
+
+</div>
+
+<figure class="screenshot">
+  <img src="images/editor.png" alt="RGate circuit editor showing a full adder with input switches and output LEDs">
+  <figcaption>A full adder in the RGate workspace. Flip the switches and follow the signals.</figcaption>
+</figure>
+
+<div class="home-columns" markdown="1">
+
+<section markdown="1">
+
+## What can it do?
+
+- **Draw circuits.** Wire up logic gates, switches, memories, and displays.
+- **Watch them run.** Change inputs, step through simulation, and inspect signals.
+- **Build bigger things.** Turn circuits into reusable modules with custom symbols.
+- **Explore timing.** Record signals and read them in the waveform viewer.
+- **Mix in Verilog.** Write HDL modules and connect them to schematics in the desktop app.
+
+</section>
+
+<section markdown="1">
+
+## Take a look around
+
+- [Your first circuit](guides/getting-started.md) — start with switches and an AND gate.
+- [The component catalog](components/README.md) — gates, buses, memory, and more.
+- [Example circuits](examples/README.md) — small experiments and bigger builds.
+- [An LC-3 computer](examples/lc3.md) — look inside a complete little machine.
+- [A VGA controller](examples/tiny-vga.md) — make pixels from digital logic.
+- [The user manual](guides/interface.md) — get to know the workspace.
+
+</section>
+
+</div>
+
+<div class="notice" markdown="1">
+
+**A familiar idea, a fresh start.** TkGate made digital logic something you could
+see and experiment with. RGate carries that spirit forward with schematic editing,
+live simulation, and a browser-based workspace. It's free software, licensed under the
+[GNU GPL v3](https://github.com/rumpl/rgate/blob/main/LICENSE).
+[Bug reports and contributions](https://github.com/rumpl/rgate) are welcome.
+
+</div>
+
+## Using the manual
+
+The documentation index lists the guides and component reference. Start with
+[simulation](guides/simulation.md), [modules and symbols](guides/modules.md), or
+[waveforms](guides/waveforms.md) when you're ready to go further. There are also
+[keyboard shortcuts](reference/shortcuts.md) and a
+[troubleshooting page](reference/troubleshooting.md).
 
 Pin directions are relative to the component: an input receives a signal, an
 output drives one, and an inout does both. Bit 0 is the least-significant bit.
