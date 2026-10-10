@@ -49,8 +49,8 @@ the appropriate modifier.
 | M   | Multiplexer |
 | T   | Comment     |
 
-All remaining entries are in Make and the searchable Components palette. Escape
-returns to selection. A palette drag places a single component rather than
+All remaining entries are in the searchable Components palette. Escape returns
+to selection. A palette drag places a single component rather than
 continuous-placement mode.
 
 ## Simulation

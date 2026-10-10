@@ -3,104 +3,80 @@
 [Documentation home](../README.md) ·
 [Live debugging](simulation.md#live-hierarchical-debugging)
 
-A **definition** contains an editable circuit. An **instance** is a reusable
-block that refers to that definition. Editing a definition changes all its
-instances; runtime state is separate for each instantiated copy.
+A module definition holds a reusable circuit or Verilog source. Place instances
+of that definition in other circuits to build a hierarchy. Editing a definition
+updates its instances; each live instance has its own state.
 
 ## Create a definition
 
-Use **Module → New module…** or the `+` in the Modules header. Enter a unique
-nonempty name. The new definition is selected with an empty canvas; the previous
-module keeps its contents. Suggested names advance automatically (`module2`,
-`module3`, …). Creation is undoable.
+Choose **Module → New module…**, enter a unique name, and build the circuit on
+its new canvas. Choose **Module → New Verilog module…** to create a source
+module instead; see [Verilog modules](verilog-modules.md).
 
-Build the child circuit as usual. Its unconnected gates don't create ports by
-themselves.
+Switch between definitions using Modules. Tree shows instance paths, while List
+shows each definition. Module creation and schematic edits support undo/redo.
 
 ## Expose ports
 
-Open **Interface**. Select a net and click Input, Output, InOut, or Internal.
-Inputs receive parent signals, outputs drive parents, and inout is
-bidirectional. Port names become named instance pins, with the net's width.
+Open **Interface**. Select a net and choose Input, Output, InOut, or Internal.
+Inputs receive signals from the parent; outputs drive the parent; inout ports
+carry signals in both directions. Port names and widths become the instance’s
+pins.
 
-Use Nets/Properties to choose meaningful unique net names before exposing them.
-Interface changes propagate to existing instances; incompatible connected widths
-are rejected, not silently rewired. Removing a port detaches affected endpoints.
-Disconnect before incompatible bus changes.
+Name your nets in Properties before exposing them. When changing connected bus
+widths, disconnect the affected pins, update the interface, then reconnect them.
+
+For a Verilog definition, use **Interface…** in its Edit tab to declare ports
+and observed internal signals.
 
 ## Place an instance
 
-![A user-defined module instance with bus ports](../images/components/module.png)
+![A module instance with bus ports](../images/components/module.png)
 
-1. Switch to the intended parent module.
-2. Click `＋` beside the desired **other** definition/instance row, then click
-   the canvas; or drag its row from the right Components palette's Module
-   instances group.
-3. Connect its pins like ordinary components.
+1. Switch to the parent schematic.
+2. Find the definition under **Module instances** in Components and drag it onto
+   the canvas. You can also click `＋` beside another module’s row, then place
+   it.
+3. Connect its pins as you would any component.
 
-The current definition doesn't have its own placement `＋`. Direct or indirect
-recursive hierarchies are invalid: `main → main` or `A → B → A` would create
-infinite instantiation.
+Double-click an instance in Edit to open its definition. Select the instance and
+press Enter for its Properties. Return to the parent by clicking its Modules
+row.
 
-Double-click an instance in Edit to open the shared definition. Select/Enter
-opens instance Properties instead. Return by clicking a parent/root row. Tree
-shows actual instance paths; List shows each definition. Expanding one branch is
-independent of another copy. Unused top-level definitions are listed separately
-in Tree.
+Build hierarchies from parent modules toward child definitions. Use separate
+instances to reuse the same circuit in several places.
 
 ## Block layout
 
-Instance Properties offers rectangular block width and **Port positions JSON**,
-relative to the block center:
-
-```json
-{ "A": { "x": -50, "y": -10 }, "Y": { "x": 50, "y": 0 } }
-```
-
-Only existing port names are accepted; coordinates must be finite/in range. Use
-x<0 for left, x>0 for right, or suitable y positions for top/bottom. This
-controls drawing and wire attachment, not pin direction/width. Existing
-connected wire endpoints are adjusted when applying geometry changes.
+Instance Properties controls the block width and instance-name visibility.
+Choose a useful size for the number of ports and bus labels. Changes to the
+block layout keep connected wire endpoints attached.
 
 ## Custom module symbol
 
-Choose the definition, then **Module → Edit module symbol…**. The drawing is
-shared by its instances.
+Select the definition and choose **Module → Edit module symbol…**.
 
 - Choose Line, Rectangle, Ellipse, or Text.
-- Drag to draw lines/shapes; click to place the entered text.
-- Origin is the canvas center; coordinates snap to 5 units.
-- **Undo shape** removes the last draft shape; **Clear** removes draft shapes.
-- Apply validates and updates all instances as one undoable circuit edit.
-  Cancel/Escape leaves the definition unchanged.
+- Drag to draw shapes; click to place text.
+- Use the centered grid to position the drawing around the module’s ports.
+- **Undo shape** removes the last draft shape; **Clear** starts a fresh drawing.
+- Apply updates all instances. Cancel or Escape keeps the previous symbol.
 
-Symbols support up to 1024 validated primitives. Instance electrical ports
-remain separately configurable; a drawn line is not a wire. Native saving and
-Verilog layout comments retain custom geometry. No arbitrary SVG import,
-Bézier/freehand tools, or symbol-library browser is provided.
+Save the document to retain the symbol. Electrical connections remain on the
+module’s declared ports.
 
 ## Simulation inside hierarchy
 
-![LC-3 module hierarchy and root circuit](../images/lc3.png)
+![LC-3 hierarchy and root circuit](../images/lc3.png)
 
-During simulation choose an **exact Tree instance**, or double-click its block.
-This is live debugging: time, register/memory state, probes, and run status
-remain in the same root simulation. The workspace shows
-`Live: main/cpu/controller`; **↑ Parent** moves upward.
+Start simulation from the parent, then select an exact Tree instance or
+double-click its block. The canvas, Nets, displays, and probes show that copy’s
+live values. Time and state continue as you navigate.
 
-List navigation works only if the definition has a unique live instance. For
-several copies choose the specific Tree path. An uninstantiated definition can't
-be inspected live. Stop or choose Edit before changing circuits or running a
-definition independently.
+The workspace shows a path such as `Live: main/cpu/controller`. Use **↑ Parent**
+to return. For repeated copies, select the specific Tree path; List is useful
+when a definition has one live instance.
 
-Probing a child port also probes the connected parent signal: they are aliases
-of the same electrical net, not two independent traces. Internal nets and
-switches resolve to their individual instance. See [simulation](simulation.md).
-
-## Current management limits
-
-New/edit/instantiate/symbol workflows are implemented. There is no dedicated
-rename/duplicate/delete-definition dialog, parameterized module elaboration, or
-library manager. Gate-instance names can be changed in Properties; that changes
-its hierarchy path and can invalidate saved probes. Keep an original saved
-document before reorganizing a large hierarchy.
+Probe child ports to follow signals across a module boundary. Probe internal
+nets to inspect the selected instance. Waveform names include the instance path.
+Pause to inspect values and Stop before editing a shared definition.

@@ -13,8 +13,7 @@ before wiring. Select width is the binary width required for the count, at least
 one bit: two inputs → 1 select bit; eight → 3 bits.
 
 S=0 selects I0, S=1 selects I1, etc. Unknown/out-of-range select yields X. A mux
-chooses a whole data bus; it doesn't independently choose each bit. Default is
-two one-bit inputs.
+chooses a whole data bus. Default is two one-bit inputs.
 
 Example: I0=0x12, I1=0x34, S=1, width=8 → Z=0x34.
 
@@ -30,8 +29,8 @@ E is **active-high** and unconnected E defaults enabled. When enabled, exactly
 the output indexed by I is 1; others are 0. E=0 makes all outputs 0. Unknown
 index/enable yields unknown outputs; a known out-of-range index selects none.
 
-This is a binary-to-one-hot decoder, not a CPU instruction interpreter. Build
-instruction decoding from taps, decoders, and gates or a ROM.
+The decoder converts a binary selection to one-hot outputs. Build instruction
+decoding from taps, decoders, and gates or a ROM.
 
 ## Demultiplexer
 
@@ -62,11 +61,7 @@ Z  = 0xAB
 
 **I0 is the least-significant partition**, the reverse of left-to-right Verilog
 concatenation notation. The equivalent Verilog expression is `{I1, I0}`. X/Z
-bits are preserved; concatenation isn't arithmetic addition.
-
-TkGate's supported annotated `assign out = {a,b,...}; //: CONCAT ...` imports as
-a joiner with original endpoint coordinates. Imported compact joiners draw a
-narrow connector rather than a large generic block.
+bits are preserved.
 
 ## Bus splitter
 
@@ -83,12 +78,11 @@ wiring; existing net widths won't automatically resize.
 ![Bus tap as rendered in RGate](../images/components/tap.png)
 
 **Pins:** full bus input `I`, slice output `Z`. Configure input width, **Tap bit
-offset** (zero-based LSB index), and **Tap output width**. Offset+output width
-must not exceed input width.
+offset** (zero-based LSB index), and **Tap output width**. Keep the selected
+slice within the input bus.
 
 Example: eight-bit I=0xAB, offset=4, output width=4 → Z=0xA. X/Z bits are copied
-as-is. Tap is **read-only**: output drivers cannot write selected bits back into
-I.
+as-is. Tap copies the selected input bits to its output.
 
 You can place Tap explicitly or create one by starting a narrower wire and
 dropping it onto an existing wider bus. The automatic tap begins at offset 0;
@@ -97,11 +91,10 @@ edit.
 
 ## Avoid common width mistakes
 
-Set the source and destination widths before connecting. Binary select width is
-not data width. A 16-bit mux may have a 1-bit selector; a splitter's 4-bit
-outputs cannot directly drive an 8-bit LED. Use Concat/Tap or deliberately
-matching component widths.
+Set the source and destination widths before connecting. Choose binary select
+width separately from data width. A 16-bit mux may have a 1-bit selector; a
+splitter's 4-bit outputs fit four-bit displays. Use Concat/Tap or matching
+widths to connect other bus sizes.
 
-Wire crossings do not merge nets. A shared bus must have proper arbitration
-(often tri-state drivers); Concat/Splitter only transform bit layouts, not
-drive-enable behavior.
+Junction dots identify connected wires. Use tri-state enables to coordinate
+shared-bus drivers, and Concat/Splitter to organize their bit layouts.

@@ -3,18 +3,15 @@
 [Examples](README.md) · [Simulation](../guides/simulation.md) ·
 [TTY](../components/tty.md)
 
-Open **File → LC-3 CPU circuit**, or:
-
-```sh
-cargo run -- examples/lc3.rgate
-```
+Download [lc3.rgate](../../examples/lc3.rgate) and open it with **File →
+Open…**.
 
 ![LC-3 root schematic and reusable modules](../images/lc3.png)
 
-## What is implemented
+## Explore the computer
 
-This is a **microcoded schematic**, not a Rust CPU emulator. Ordinary registers,
-muxes, gates, taps/concatenation, RAM, and ROM implement execution.
+The computer uses a microcoded control circuit, registers, multiplexers, logic
+gates, and memory. Open its modules to follow instruction execution.
 
 | Definition   | Contents                                                                                                                       |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -23,10 +20,8 @@ muxes, gates, taps/concatenation, RAM, and ROM implement execution.
 | RegisterFile | Eight 16-bit registers, one write decoder, two eight-way read muxes                                                            |
 | Control      | Microstate register, opcode dispatch logic, editable 256×32 control ROM                                                        |
 
-Generated wires attach to native pin coordinates and avoid unrelated component
-bodies. Crossings without junction connection are not electrical merges. The
-complete circuit is still dense; Fit is an overview, not a textbook datapath
-layout. Zoom into modules for inspection.
+Use Fit for the whole-computer overview, then zoom into modules to inspect the
+data path. Junction dots identify connected wires.
 
 ## Run the included program
 
@@ -50,9 +45,9 @@ layout. Zoom into modules for inspection.
 The included program clears R0/R1, loads count 5, sums down to 1, stores the
 result at x3020, loads H/I/newline characters, calls TRAP x21, then TRAP x25.
 
-- `examples/lc3-program.asm` documents source/instructions. No assembler is
-  bundled.
-- `examples/lc3-program.hex` contains initial RAM words and addresses.
+- [lc3-program.asm](../../examples/lc3-program.asm) contains the assembly
+  source.
+- [lc3-program.hex](../../examples/lc3-program.hex) contains the RAM image.
 - TRAP x21 reads a vector at x0021 and runs ordinary LC-3 code at x3100.
 - The minimal OUT handler writes to **xFE06**; the circuit decodes that store to
   strobe the TTY. It deliberately clobbers R2.
@@ -65,9 +60,9 @@ Probe PC, IR, STATE, CC, and R0/R1; then enter `main/cpu/controller` or
 Run/pause/step preserve time and state. Use ↑ Parent to return. Child-port
 probes can alias root signals; internal probes carry full hierarchical labels.
 
-STATE is a microstate, not an instruction counter. Fetch/execute commonly takes
-several cycles. Don't shorten the clock without checking combinational settling.
-VCD can export retained traces for external viewing.
+STATE identifies the current microstate. Fetch and execute span several clock
+cycles; use clock-step to follow them. VCD can export retained traces for
+external viewing.
 
 ## Load or modify a program
 
@@ -76,18 +71,9 @@ copy of the document. Fresh simulation reloads initial RAM; runtime inspector
 modifications are volatile. RESET_N must be exercised again. Microcode lives in
 the Control module's ROM and is also ordinary editable configuration.
 
-## Instruction scope and limits
+## Instructions to explore
 
-Implemented paths: **BR, ADD, AND, NOT, LD/ST, LDR/STR, LDI/STI, LEA, JSR/JSRR,
-JMP/RET, TRAP vector indirection**. End-to-end tests cover sum/output/halt and
-indirect-memory/subroutine paths.
-
-Not a complete LC-3 machine/OS: no RTI, interrupts, privilege/PSR, protected
-memory, keyboard MMIO, packaged GETC/PUTS service image, or assembler.
-RTI/reserved opcodes lead to halt. The memory/device model is digital and
-timing-simplified.
-
-Executable Verilog export of the full root fails intentionally because TTY uses
-host I/O. Component-only CPU/RegisterFile/Control modules are exportable when
-separated from the host terminal. There is no behavioral Verilog simulator
-hidden inside the CPU example.
+The circuit executes **BR, ADD, AND, NOT, LD/ST, LDR/STR, LDI/STI, LEA,
+JSR/JSRR, JMP/RET, and TRAP vector indirection**. Try a branch, a subroutine, or
+an indirect load/store and follow PC, IR, registers, and memory in the live
+hierarchy. The control ROM is editable in the Control module.

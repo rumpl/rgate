@@ -2,17 +2,16 @@
 
 [Component index](README.md) · [Interface](../guides/interface.md)
 
-These components have **no electrical pins and no simulation behavior**. They
-help explain and organize a circuit.
+Use comments and frames to explain and organize your circuit.
 
 ## Comment
 
 ![Comment as rendered in RGate](../images/components/comment.png)
 
-Place Comment using Make, the palette, or T. Properties has **Text**; the
-current single-line field represents newlines as `\n`.
+Place Comment from Components or press T. Properties has **Text**; the current
+single-line field represents newlines as `\n`.
 
-Text may contain safe TkGate-style HTML markup:
+Text supports headings, emphasis, colors, code, and links:
 
 ```html
 <h2>Datapath</h2>
@@ -27,7 +26,7 @@ Text may contain safe TkGate-style HTML markup:
 Supported display runs include headings, bold/strong, italic/emphasis, code/pre,
 font color/size, line breaks, paragraphs, lists, simple table-cell spacing,
 links, and image alt-text placeholders. Common named colors and hex colors work.
-Markup source is preserved in the document; it isn't executed as a program.
+Save the document to keep the annotation’s text and formatting.
 
 **Cmd/Ctrl-click or double-click** a link:
 
@@ -36,13 +35,10 @@ Markup source is preserved in the document; it isn't executed as a program.
   instance).
 - A `.v`/`.rgate` relative link resolves beside a desktop-opened document. Save
   current edits first; unsaved changes block file-link replacement.
-- Browser file links cannot access your filesystem; use File → Open/upload.
+- In the browser, use File → Open to select a circuit from your device.
 
-Image tags display **alt text placeholders**; image files are not loaded from
-the network or disk. The obsolete bundled TkGate image catalog has been removed.
-Scripts and style blocks are ignored; this is not a general HTML/CSS browser or
-a TkGate tutorial script runner. Colors/sizes/layout are the supported subset,
-not full web semantics.
+Image tags display their alt text as a placeholder. Use headings, colors, and
+links to make the annotation easy to follow.
 
 ## Frame
 
@@ -53,11 +49,6 @@ Properties, or leave the text empty to display its instance name. Set frame
 width/height, or drag its **bottom-right corner** in Select mode. Dimensions are
 constrained to 20–10000 world-coordinate units.
 
-Frames don't block clicks in their interior. Select/move them via their border;
-their resize gesture is undoable. They aren't a grouping container: moving a
-frame does not automatically move enclosed gates, and contained gates still
-belong to their module.
-
-Frames are ignored by simulation and executable Verilog behavior. Their visual
-geometry survives native saves/layout metadata. They do not provide memory
-protection, hierarchy, or electrical isolation.
+Select and move a frame by its border; click inside it to work on the enclosed
+gates. Drag its bottom-right corner to resize. Use a gate/wire selection to move
+a group together. Save the document to keep frame placement and titles.

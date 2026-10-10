@@ -1,15 +1,14 @@
 # Persistent Icarus Verilog backend prototype
 
-[HDL evaluation](hdl-backend.md) ·
-[HDL fixtures](../../examples/verilog/README.md)
+[HDL evaluation](hdl-backend.md) · [HDL fixtures](../examples/verilog/README.md)
 
 Unlike the xezim replay prototype, this adapter compiles once and controls **one
 persistent `vvp` child process** through a small C VPI plugin. The Rust adapter
 implements `SimulationBackend`, with no unsafe Rust or in-process FFI. An opt-in
 desktop PWM binding now connects it to editor inputs, LEDs, hierarchy, and
-waveforms. The [Verilog module workflow](verilog-modules.md) also runs stored
-source modules and their supported schematic parents. The original PWM binding
-remains an explicit example.
+waveforms. The [Verilog module workflow](../docs/guides/verilog-modules.md) also
+runs stored source modules and their supported schematic parents. The original
+PWM binding remains an explicit example.
 
 ## Try PWM
 
@@ -129,9 +128,9 @@ backends.
 - **Not sandboxed.** A child process is not a security boundary: HDL system
   tasks can write files or invoke host commands. Run trusted HDL only. Child
   cleanup does not guarantee cleanup of arbitrary subprocesses launched by HDL.
-- Stored [Verilog modules](verilog-modules.md) can now run independently or in
-  supported schematic parents. This does not implement automatic HDL
-  synthesis/import or video peripheral hookup.
+- Stored [Verilog modules](../docs/guides/verilog-modules.md) can now run
+  independently or in supported schematic parents. This does not implement
+  automatic HDL synthesis/import or video peripheral hookup.
 
 ## Current assessment
 

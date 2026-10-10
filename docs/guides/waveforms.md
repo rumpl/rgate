@@ -36,8 +36,8 @@ space is narrow.
 
 Signal values beneath their names are evaluated **at A**, or at current
 simulation time if A is unset. `—` means no known sample at that time—for
-example A precedes the start of recording. Cursor placement is time-based, not
-instruction-based; Δ is ns, not automatically CPU cycles.
+example A precedes the start of recording. Cursors measure simulation time; Δ is
+shown in nanoseconds.
 
 ## Signal list
 
@@ -63,19 +63,18 @@ rather than a known low.
 
 ## VCD export
 
-Click **VCD…** to export all currently probed traces, not only filtered rows.
-Desktop prompts for a file; browser downloads `rgate-waveforms.vcd`. Timescale
-is **1 ns**, full signal names are retained, and X/Z bits are exported. Use
-GTKWave, Surfer, or another VCD viewer for offline analysis.
+Click **VCD…** to export all currently probed traces. Desktop prompts for a
+file; browser downloads `rgate-waveforms.vcd`. Timescale is **1 ns**, full
+signal names are retained, and X/Z bits are exported. Use GTKWave, Surfer, or
+another VCD viewer for offline analysis.
 
 Export includes only **retained history**: signals begin when probed and older
-changes can be evicted after 4096 transitions per signal. It doesn't manufacture
-samples from before recording. VCD export needs at least one probe. RGate does
-not yet import VCD/FST files or export FST.
+changes are retained up to 4096 transitions per signal. Add at least one probe
+before exporting.
 
 ## Persistence
 
 Workspace settings retain timeline range/follow, cursors, column width, filter,
-radix, order, grouping, and collapsed groups. They do not retain event history.
-After a fresh simulation saved probes reattach and begin new traces. Cursor
-values may be outside new retained history until you Fit or reposition them.
+radix, order, grouping, and collapsed groups. After a fresh simulation saved
+probes reattach and begin new traces. Cursor values may be outside new retained
+history until you Fit or reposition them.

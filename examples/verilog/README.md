@@ -38,7 +38,7 @@ path to select the older replay adapter (Rust 1.92+ required).
 or invoke commands. The optional xezim adapter repeats execution from time zero,
 including side effects. Avoid testbenches with `$finish`, `$stop`, `final`,
 random/external state, or dump/filesystem tasks. Read the
-[backend evaluation](../../docs/guides/hdl-backend.md) for the substantial
+[backend evaluation](../../contributor-docs/hdl-backend.md) for the substantial
 stepping and performance limitations.
 
 ## PWM shared fixture

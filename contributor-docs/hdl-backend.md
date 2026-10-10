@@ -1,14 +1,15 @@
 # Experimental HDL backends
 
 [Persistent Icarus VPI evaluation](icarus-backend.md) ·
-[Documentation](../README.md) ·
-[Downloaded HDL playground](../../examples/verilog/README.md)
+[Documentation](../docs/README.md) ·
+[Downloaded HDL playground](../examples/verilog/README.md)
 
 `rgate-hdl` is a separate crate with an optional **native-only** `xezim`
 feature. Normal editor and web builds do not link xezim. It depends on
 `rgate-sim` for the `SimulationBackend`, signal traces, errors, and VCD
 exporter; dependency direction is not reversed. The GUI normally runs the
-schematic simulator; opt-in native [Verilog modules](verilog-modules.md) and the
+schematic simulator; opt-in native
+[Verilog modules](../docs/guides/verilog-modules.md) and the
 [desktop PWM example](icarus-backend.md#try-it-in-the-desktop-editor) use
 Icarus.
 

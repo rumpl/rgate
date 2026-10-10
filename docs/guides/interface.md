@@ -12,7 +12,7 @@
 | Menus and tools, top             | New/open/save/export; undo/redo; selection, wiring, panning, cut/delete; rotation; simulation; zoom/Fit. Hover a toolbar tool for a status hint.                 |
 | Modules, upper-left              | Tree of instance paths or List of definitions. Click a name to edit, or inspect a live instance during simulation. Triangles expand/collapse branches.           |
 | Nets / Ports, lower-left         | Nets list connections in the current module, including bus widths and live values. Ports limits the list to exposed interface nets. `○`/`●` adds/removes probes. |
-| Edit / Interface / Simulate tabs | Schematic editing, module port directions, or runtime controls and signal values.                                                                                |
+| Edit / Interface / Simulate tabs | Schematic or Verilog source editing, module ports, and live simulation.                                                                                          |
 | Canvas, center                   | Place, wire, select, move, rotate, and inspect components.                                                                                                       |
 | Components, right                | Searchable, categorized palette. Click to enter repeated-placement mode, or drag a row to place one component.                                                   |
 | Messages / Waveforms, bottom     | Diagnostics and selectable/copyable messages, or the independent waveform viewer.                                                                                |
@@ -23,8 +23,7 @@
 Drag the vertical dividers beside the left and right sidebars. Drag the
 horizontal **Modules/Nets** separator to give the tree more height; long names
 stay on one line and truncate. Drag the divider above Messages/Waveforms to
-change bottom-panel height. These sizes persist as workspace preferences, not
-circuit changes.
+change bottom-panel height. RGate remembers these sizes for your workspace.
 
 ## Search and place components
 
@@ -36,14 +35,13 @@ produces an explicit message.
 - Click a result, then click the canvas to place it. Escape ends repeated
   placement.
 - Drag a result onto the canvas to place one snapped component.
-- Search does not change the circuit. Typing here does not trigger canvas
-  hotkeys.
+- Type in Search to filter the palette; click the canvas to use placement
+  shortcuts.
 - Escape clears the search and returns focus to the canvas; Enter returns focus
   without clearing.
-- **Make** offers the same built-in catalog in a scrollable menu.
+- Browse categories to choose a component, or use a quick-placement shortcut.
 
-Module rows show `＋` only for definitions other than the currently open module.
-Recursive hierarchies are rejected even if attempted indirectly.
+Use another definition’s `＋` to place a child module in the current parent.
 
 ## Selection and moving
 
@@ -58,15 +56,14 @@ Press **V** for Select mode.
 - Drag a horizontal wire segment vertically, or a vertical segment horizontally.
   Endpoints remain attached; extra elbows are created when needed. A complete
   drag is one undo step.
-- Gate group movement is supported; box-selecting wires does not imply a general
-  whole-wire translation mode. Individual wire segments are moved by dragging
-  them.
+- Group movement carries internal wires along with the selected gates. Drag
+  individual wire segments to adjust their routes.
 - Delete removes selected gates/branches. Deleting both attached gates removes
   their connecting wire; nets with no remaining gate connections are cleaned up
   on gate deletion.
 - Cmd/Ctrl-A selects all. Undo/redo and cut/copy/paste use their usual
   shortcuts. Clipboard copies remap identifiers and retain internal gate-to-gate
-  wires; external connections are not an automatic reconnection feature.
+  wires. Connect the pasted group to its new surroundings.
 - R rotates clockwise; Shift-R counterclockwise. Rotation preserves electrical
   pin attachment.
 
@@ -86,12 +83,10 @@ scalar inputs broadcast across a bus. To explicitly partition/join a bus, use
 
 Dropping a narrower wire onto a wider existing bus automatically creates a
 **read-only Tap**, initially selecting low bits from offset 0. Edit its range
-before connecting more logic. It does not write individual bits back into the
-wide bus.
+before connecting more logic.
 
-Crossings alone are not connections. Junction dots/probes and net identity
-matter. New manual wires use the corners you choose; the obstacle router for
-generated LC-3 geometry is not a universal auto-route command.
+Junction dots mark connections. Add corners to guide your manual wire routes,
+then use Arrange to organize the finished circuit.
 
 ## Find and arrange circuits
 
@@ -113,30 +108,18 @@ Select components and open **Arrange**:
   whole module. It preserves net and pin references and fixed unattached
   endpoints.
 - **Tidy layered layout** moves selected components; with no gate selection it
-  arranges all non-comment/non-frame gates in the current module. It uses
-  directed layers, cycle breaking, and barycenter sweeps. It does not
-  recursively rearrange child definitions. After placement, select wires and
-  route them separately.
+  arranges all non-comment/non-frame gates in the current module. After
+  placement, select wires and route them separately.
 
 Group dragging translates internally connected wires rigidly with their gates.
 Selected dangling/internal wire segments whose attached gates move also
 translate. External attached wire ends are adjusted; explicitly select junction
 segments you want moved together.
 
-Routing uses an orthogonal visibility grid with A\* and costs for length, bends,
-crossings, and shared-channel congestion. This **encourages**, but does not
-guarantee, fewer crossings. Fixed component placement can make zero crossings
-impossible. Exact crossing minimization is computationally hard; layered
-placement and barycenter ordering are practical schematic-layout heuristics.
-Comments/frames are not routing obstacles; gates are. Overlapping gates or
-attached endpoints buried in other bodies are reported rather than silently
-tunneled through.
-
-All organization changes are undoable and available only after stopping
-simulation. Routing failures leave geometry unchanged. Tidy and routing have
-budgets (500 selected gates for placement; 1000 wires/500 obstacles and bounded
-A\* grid/search for routing). Arrange smaller sections for very large circuits;
-manual routing remains available.
+Use routing to find clear paths around gates and tidy layout to improve
+component spacing. Apply them to a selected section of a large design.
+Organization changes support Undo; place components first, then route their
+wires.
 
 ## Properties
 
@@ -147,9 +130,9 @@ Properties…**. Module instances instead open their definition on a canvas
 double-click; use Enter for instance properties.
 
 Common fields include name, width, initial value, delay, and instance-name
-visibility. Only relevant fields affect a component; for example clock period
-belongs to clocks, not LEDs. Decimal initial values and `0x` hexadecimal values
-are accepted, including wide buses. Component-specific options appear below the
+visibility. Only relevant fields affect a component; for example clock period is
+configured on a Clock. Decimal initial values and `0x` hexadecimal values are
+accepted, including wide buses. Component-specific options appear below the
 common fields.
 
 Disconnect a component before changing pin widths/layout. Display-only LED modes
@@ -167,21 +150,19 @@ saved initial properties.
 ## Navigation and themes
 
 Scroll/trackpad scroll pans the schematic; Cmd/Ctrl-scroll zooms around the
-pointer. Native trackpad pinch is supported by the GPUI backend. P enters
-drag-to-pan; middle-drag also pans. `+`/`−` zoom, and Cmd/Ctrl-0 or **Fit** fits
-the current module.
+pointer. Native trackpad pinch zooms the view. P enters drag-to-pan; middle-drag
+also pans. `+`/`−` zoom, and Cmd/Ctrl-0 or **Fit** fits the current module.
 
 Choose **View → Theme: Classic / Modern / Dark**. Classic preserves the
-TkGate-style palette but uses vector symbols rather than low-resolution gate
-images. Modern and Dark change colors/styling without changing circuit behavior.
+TkGate-style palette. Modern and Dark offer coordinated light and dark colors.
 Theme persists across sessions.
 
 ## Messages
 
 Drag across Messages text to select it, including multiple lines. Cmd/Ctrl-C
 copies the selection; Cmd/Ctrl-A selects the visible log text. The log presents
-recent messages; it is not a permanent execution transcript. Red errors identify
-failed edits, unsupported imports, or simulation problems.
+recent messages. Red errors identify failed edits, unsupported imports, or
+simulation problems.
 
 See [shortcuts](../reference/shortcuts.md) and
 [troubleshooting](../reference/troubleshooting.md).

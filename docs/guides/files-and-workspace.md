@@ -3,106 +3,68 @@
 [Documentation home](../README.md) ·
 [Troubleshooting](../reference/troubleshooting.md)
 
-## Circuit files
+## Open and save circuits
 
-| Format/action     | What it does                                                                                                                              |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `.rgate`          | Versioned JSON containing definitions, gates/pins, nets, wires/layout, initial component configuration, comments, and symbols             |
-| Open TkGate `.v`  | Imports the supported annotated schematic subset, including coordinates, endpoints, rotations, selected gate options, and supported joins |
-| Export Verilog    | Emits executable constructs for supported circuit primitives/modules, plus comments containing native layout metadata                     |
-| VCD… in Waveforms | Exports retained runtime signal changes; not a circuit file                                                                               |
+Choose **File → Open…** to open a `.rgate` document or import a TkGate
+schematic. Use **Save** to update your document and **Save as…** to create
+another copy.
 
-All definitions are stored together in one native document. Simulation runtime
-state (registers, mutable RAM, TTY queues/output, time/events, trace history) is
-not a native circuit save.
+A `.rgate` file keeps the complete design together: schematic modules, Verilog
+source, ports, wires, component properties, memory images, comments, and custom
+symbols. Set initial input values and memory contents in Properties before
+saving. A fresh simulation starts from these saved settings.
 
-Desktop Save uses atomic file replacement through a temporary sibling. Saving an
-imported `.v` normally prompts for a new `.rgate` destination, protecting the
-imported source. Read Messages for parse/validation/export errors. Unsupported
-elements are reported rather than treated as implemented behavior.
+When importing a TkGate file, save the result as a `.rgate` document. Messages
+shows the import details so you can review the converted circuit.
 
-Exported Verilog layout comments provide a **lossless RGate round-trip**, not
-native TkGate schematic-save compatibility. TTY host I/O refuses executable
-Verilog export. A CPU hierarchy without its root host peripheral can be exported
-separately. Unknown unsupported components also refuse export. No arbitrary HDL
-execution, Verilog compiler, testbench engine, or Tcl interpreter is installed.
+## Export
 
-## Browser file behavior
+**File → Export Verilog…** writes your source modules and exportable schematic
+logic as a Verilog file. RGate also retains the design layout in its export so
+you can reopen it in RGate.
 
-Open uploads a local `.rgate`/supported `.v` file. Load hex file uploads memory
-text. Save/Save As downloads `.rgate`; Export downloads `.v` if supported. The
-browser doesn't silently overwrite local files. Save marks the current app
-document saved after a successful download request; retain the downloaded file
-yourself.
+Use **VCD…** in Waveforms to save recorded signal changes for an external
+viewer. See [waveform export](waveforms.md#vcd-export).
 
-Uploads stay in your local browser/app; the static server doesn't run
-simulation. Clipboard depends on browser permissions and secure context. Quit
-asks you to close the tab rather than quitting the OS. Do not rely on native
-pathname semantics in the browser.
+## Browser files
 
-## Persistent preferences
+In the browser, Open selects a local file and Save downloads your design. Keep
+the downloaded `.rgate` file somewhere you can find again. Save As creates
+another download; loading a memory image also uses a local file picker.
 
-RGate remembers:
+Circuit editing and schematic simulation run on your device. Clipboard access
+follows your browser’s permissions. Close the tab when you finish.
 
-- Theme, left/right sidebar widths, Modules/Nets separator, bottom-panel height.
-- Grid, snapping, sidebar tabs, collapsed hierarchy branches.
-- Zoom/pan per module or live instance.
-- Probes by root/instance path/net name, skipping stale references.
-- Waveform range, follow, cursors, name-column width, filter, radix, order,
-  grouping.
+## Your workspace
 
-These settings are separate from your circuit and do not mark it dirty. Up to 32
-document workspace keys are retained. A renamed instance/net may invalidate a
-saved probe. Merely remembering a live path does not resume CPU execution.
+RGate remembers your theme, panel sizes, grid/snapping choices, module views,
+and waveform preferences. Each document can retain its own zoom, pan, named
+probes, and signal-list arrangement.
 
-## Autosave/recovery
+When you start a new simulation, saved probes attach to their matching signals
+and begin recording. Give nets and instances stable names to keep them easy to
+find across sessions.
 
-Unsaved circuit edits receive a **recovery snapshot about every 2 seconds** when
-no drag/wire gesture or prompt is in progress. Settings also flush at
-saves/document switches/normal close. Recovery doesn't overwrite the original
-document.
+## Recover unsaved edits
 
-On next startup choose **Recover circuit** or **Discard recovery**. Recovery is
-offered rather than silently replacing an explicitly opened file. A recovered
-circuit stays **unsaved** until saved/downloaded. No volatile simulation state
-or undo history is restored. Save important work manually: a crash can lose the
-latest ~2 seconds, and recovery is not a durable backup system.
+RGate periodically saves a recovery snapshot of your circuit edits. If recovery
+is offered at startup, choose **Recover circuit** to reopen the design, then
+Save it. Choose **Discard recovery** when you want to continue with your saved
+files instead.
 
-| Platform | Storage                                                                                           |
-| -------- | ------------------------------------------------------------------------------------------------- |
-| macOS    | `~/Library/Application Support/RGate/`                                                            |
-| Linux    | `$XDG_STATE_HOME/rgate`, fallback `~/.local/state/rgate`                                          |
-| Windows  | `%APPDATA%/RGate`                                                                                 |
-| Browser  | `localStorage` for the current origin, keys `rgate.v1.settings.json` and `rgate.v1.recovery.json` |
+Use Save regularly and keep copies of important designs. Save a copy before
+reorganizing a large hierarchy or trying a different program image.
 
-Desktop `RGATE_STATE_DIR` overrides the location. Corrupt/future-version state
-is reported and does not block normal startup. Panel/view values are sanitized.
-Storage quota/private mode/read-only directories produce Messages errors while
-the in-memory circuit remains open. State over 32 MB is rejected explicitly.
+## Reset preferences
 
-To reset preferences, close the app and remove `settings.json` (or its browser
-key). Recovery is separate as `recovery.json`; don't delete it if needed.
-Choosing to discard edits on Quit intentionally clears recovery. Concurrent
-processes/tabs share storage; last writer wins. Browser site-data clearing
-removes local recovery.
+Close RGate before clearing its saved settings. Desktop settings live in:
 
-## Command line
+| Platform | Location                                          |
+| -------- | ------------------------------------------------- |
+| macOS    | `~/Library/Application Support/RGate/`            |
+| Linux    | `$XDG_STATE_HOME/rgate` or `~/.local/state/rgate` |
+| Windows  | `%APPDATA%/RGate`                                 |
 
-```sh
-cargo run -- --help
-cargo run -- examples/lc3.rgate
-cargo run -- --simulate examples/parity-checker.rgate 200
-cargo run -- --export examples/full-adder.rgate /tmp/full-adder.v
-```
-
-`--simulate` starts a fresh runtime, advances the supplied ns (default 200), and
-prints root net values. It does not automatically release reset switches or run
-interactive input. `--export` converts supported documents; destination `.v`
-selects Verilog, otherwise native JSON. CLI commands are desktop-only.
-
-## Distribution and licenses
-
-The web build is a static directory; preserve `pkg/snippets`, fonts/licenses,
-LICENSE, and NOTICE. Native artwork/examples and bundled web fonts retain
-upstream notices. RGate application code is GPL-3.0-or-later; see
-[LICENSE](../../LICENSE) and [NOTICE](../../NOTICE). No warranty is provided.
+Removing `settings.json` resets preferences. Keep `recovery.json` until you have
+recovered any work you need. In the browser, clearing RGate’s site data resets
+preferences and recovery; download your circuit first.

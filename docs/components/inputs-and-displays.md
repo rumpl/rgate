@@ -7,8 +7,8 @@
 ![Switch as rendered in RGate](../images/components/switch.png)
 
 **Pin:** `Z` output, normally one bit. Initial value comes from Properties.
-During simulation click the switch to toggle 0/1. Runtime toggles do not rewrite
-the initial property and reset on a fresh simulation.
+During simulation click the switch to toggle 0/1. A fresh run restores its
+configured initial value.
 
 Use for reset, enable, mode, and other manual controls. On active-low inputs a
 switch at zero **asserts** the control; the LC-3's RESET_N is an example.
@@ -22,8 +22,8 @@ or `0x` initial value before simulation.
 
 During simulation click the DIP to open a **hex value** dialog. Enter digits
 such as `AB` or `0xAB`, then Apply. The value must fit the bus, including widths
-above 64 bits. The simulator pauses for input entry; resume when ready. This is
-not the same as changing saved initial contents.
+above 64 bits. The simulator pauses for input entry; resume when ready. Use
+Properties in Edit to change the saved initial value.
 
 ## Ground and Vdd
 
@@ -33,8 +33,7 @@ not the same as changing saved initial contents.
 | Vdd       | ![Vdd as rendered in RGate](../images/components/vdd.png)       |
 
 **Pin:** `Z` output. Ground supplies all-zero bits; Vdd supplies all-one bits at
-the selected width. They need no data inputs. They are digital constants, not
-analog voltage sources.
+the selected width. Use them wherever your circuit needs a digital constant.
 
 ## Clock
 
@@ -51,8 +50,7 @@ Example: period=100 ns, phase=10 ns, duty=25% → rising at 85 ns, falling at 11
 ns, rising at 185 ns. Default duty is 50%.
 
 Press Tab to advance one period of the fastest clock in the running hierarchy.
-Play advances simulated time, not physical time. See
-[simulation](../guides/simulation.md).
+Play advances simulation time. See [simulation](../guides/simulation.md).
 
 ## LED
 
@@ -64,8 +62,8 @@ Play advances simulated time, not physical time. See
 | Hexadecimal digits   | ![Hexadecimal digits as rendered in RGate](../images/components/led_hex.png)             |
 | Decimal digits       | ![Decimal digits as rendered in RGate](../images/components/led_decimal.png)             |
 
-**Pin:** `I` input. LEDs are observers; they do not drive their net.
-Double-click in Edit or select/Enter to choose **Display type**.
+**Pin:** `I` input. LEDs display the value on their input. Double-click in Edit
+or select/Enter to choose **Display type**.
 
 ![Choosing LED display mode](../images/led-properties.png)
 
@@ -98,10 +96,8 @@ left. Hex groups also start with the low nibble on the right. For an incomplete
 high digit, bits outside the bus are zero.
 
 Classic on/off segments are red/pale red; X is gray and Z amber. Other themes
-use their palette. A floating bus is not a valid number; a hex digit with
-unknown bits is marked unknown rather than inventing a value. LEDs rotate with
-the component. Old documents without a mode default to Bit; TkGate `/type:` is
-imported.
+use their palette. Floating and unknown bits are shown explicitly in the
+display. LEDs rotate with the component. Choose the display mode in Properties.
 
 ## GPIO peripheral
 
@@ -111,8 +107,7 @@ imported.
 starts at the initial value. Click during simulation to increment it modulo its
 width. The component shows incoming I and outgoing Z values.
 
-This is a simple built-in interactive peripheral. It is not a physical GPIO
-device, Tcl plugin, or external hardware connection. The output can drive a
-circuit while I watches another signal; they need not be connected.
+Use Z to drive a circuit and I to watch a signal. Configure the initial value in
+Properties, then change it interactively during simulation.
 
 For a text terminal, use [TTY](tty.md).

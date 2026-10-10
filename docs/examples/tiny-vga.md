@@ -2,15 +2,9 @@
 
 [Examples](README.md) · [VGA display pins](../components/vga.md)
 
-Open **File → Tiny VGA controller**, or:
-
-```sh
-cargo run -- examples/tiny-vga.rgate
-```
-
-The controller is a circuit of registers, adders, muxes, gates, and taps—not a
-Rust timing-controller emulator. The visual peripheral is only a sink that
-captures the circuit's RGB444 and synchronization outputs.
+Download [tiny-vga.rgate](../../examples/tiny-vga.rgate) and open it with **File
+→ Open…**. Registers, adders, and gates generate the raster timing; a pattern
+ROM supplies RGB444 pixels for the visual display.
 
 ## Run
 
@@ -35,9 +29,8 @@ captures the circuit's RGB444 and synchronization outputs.
 
 Pixel clock period is 100 ns. HSYNC is active-low at X=36–39; VSYNC at Y=26–27.
 DE is high only in the active rectangle and out of reset. One frame takes
-**153600 ns**, with 768 active pixels. This scaled educational mode is **not
-standard monitor-compatible VGA**: do not connect it to physical VGA hardware
-and expect a display.
+**153600 ns**, with 768 active pixels. The small raster makes timing and
+individual pixels easy to inspect in RGate.
 
 ## Modules
 
@@ -55,12 +48,3 @@ volatile. Blank-area words are irrelevant while DE=0. The sink samples rising
 pixel edges after circuit signals settle and tracks line/frame boundaries
 through active-low sync transitions. Unknown color data appears magenta;
 sync/range errors are counted.
-
-`scripts/generate-vga.py` regenerates the circuit using shared
-`circuit_builder.py` and obstacle-aware geometric routing. It does not execute
-raster timing. Save edited copies before regeneration.
-
-The host display prevents executable Verilog export of the full root, but
-timing/pattern modules can be exported separately. The example has no analog RGB
-voltages, EDID, refresh negotiation, physical VGA connector, or real-time
-monitor clock generator.

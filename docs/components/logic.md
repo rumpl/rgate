@@ -25,10 +25,9 @@ output/data width in Properties.
 | XOR       | Odd parity of inputs    | `1 XOR 1 = 0`  |
 | XNOR      | Inverted XOR            | `1 XNOR 1 = 1` |
 
-Buses are processed **bit by bit**, not reduced to a scalar. A single-bit
-logical input broadcasts across every bit of a wider gate: an AND gate with an
-8-bit data input and a scalar enable of 1 passes the data; enable 0 produces
-zero.
+Buses are processed **bit by bit**. A single-bit logical input broadcasts across
+every bit of a wider gate: an AND gate with an 8-bit data input and a scalar
+enable of 1 passes the data; enable 0 produces zero.
 
 A controlling input may determine the result even with unknowns: `0 AND X = 0`,
 `1 OR X = 1`. XOR with X/Z becomes X. Inverted variants invert the result, with
@@ -74,7 +73,7 @@ changes. A dedicated reduction entry always remains a reduction gate.
 **Pins:** `I` input and `Z` output, matching data widths.
 
 - **Buffer** produces the same known `0/1` input. Floating `Z` or unknown `X`
-  input becomes **X**; a buffer is not merely a wire.
+  input becomes **X**.
 - **NOT** inverts each known bit; X/Z becomes X.
 
 Buffers preserve gate delay and isolate logic stages. Use Vdd/Ground or actual
@@ -95,9 +94,9 @@ output**.
 | Off        | On     | `notif1`           | E=1        |
 | On         | On     | `notif0`           | E=0        |
 
-When disabled, Z is **high impedance**, not zero. Enabled inputs are
-buffered/inverted; enabled X/Z data becomes unknown. An unknown enable generally
-produces unknown output.
+When disabled, Z is **high impedance**. Enabled inputs are buffered/inverted;
+enabled X/Z data becomes unknown. An unknown enable generally produces unknown
+output.
 
 Several tri-state drivers can share a bus when only one drives it at once.
 Conflicting active drivers produce X. An inverted tri-state gate is **not**

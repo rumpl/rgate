@@ -1,7 +1,6 @@
 # xezim: proposed upstream interactive-session contribution
 
-[HDL evaluation](../guides/hdl-backend.md) ·
-[Icarus integration](../guides/icarus-backend.md)
+[HDL evaluation](hdl-backend.md) · [Icarus integration](icarus-backend.md)
 
 ## Purpose and inspected revision
 

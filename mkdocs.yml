@@ -71,11 +71,6 @@ nav:
   - Reference:
       - Shortcuts: reference/shortcuts.md
       - Troubleshooting: reference/troubleshooting.md
-  - Development:
-      - HDL backend evaluation: guides/hdl-backend.md
-      - Icarus backend: guides/icarus-backend.md
-      - Xezim contribution proposal: development/xezim-interactive-api.md
-      - Screenshot provenance: images/README.md
 
 validation:
   links:

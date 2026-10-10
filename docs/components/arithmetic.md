@@ -9,15 +9,13 @@
 **Inputs:** `A`, `B` data buses and scalar `CI` carry-in. **Outputs:** `S` sum
 and scalar `CO` carry-out. Data widths match the configured width (default 8).
 
-S is the low-width sum; CO is the overflow carry. Drive CI explicitly with
-Ground when no carry-in is needed—an unconnected CI is Z, not an implied zero.
-For eight bits, A=255, B=2, CI=1 → S=2, CO=1. Four-state carry logic propagates
-controlling/unknown bits rather than converting the whole sum into a machine
-integer.
+S is the low-width sum; CO is the overflow carry. Connect CI to Ground for a
+zero carry-in. For eight bits, A=255, B=2, CI=1 → S=2, CO=1. Four-state carry
+logic propagates controlling/unknown bits rather than converting the whole sum
+into a machine integer.
 
 The output is a bit vector; whether it represents signed or unsigned data
-depends on your interpretation. The adder does not supply a separate
-signed-overflow flag.
+depends on your interpretation. CO reports the carry out.
 
 ## Multiplier
 
@@ -39,8 +37,7 @@ operands produce unknown output.
 widths can be configured independently; Q/R use the overall width.
 
 Unsigned integer division: A=23, B=5 → Q=4, R=3. Narrow outputs truncate.
-**Division by zero yields X**, not an exception or arbitrary zero.
-Unknown/floating operands also yield X.
+**Division by zero yields X**. Unknown/floating operands also yield X.
 
 ## Shared shift/rotate interface
 
@@ -57,8 +54,7 @@ Newly created S pins use ceiling(log2(data width)), with at least one bit.
 Eight-bit data therefore has a **3-bit selector**, representing 0–7. Existing
 documents retain their saved pin layouts, which may use a wider selector.
 
-Use an appropriately sized source for S. Writing 255 to a three-bit source is
-rejected in Properties; a legacy/truncated stored value isn't a shift-by-255.
+Use a three-bit source for an eight-bit shift amount, with values from 0 to 7.
 Unknown S produces X. Data X/Z bits are preserved when moved; inserted zero bits
 are known zeros.
 
@@ -75,13 +71,9 @@ right=0xC0; rotate left=0x03; rotate right=0xC0.
 
 Rotate amount wraps modulo data width. A logical shift at or beyond width, if a
 saved select pin allows it, yields zero; arithmetic right repeats the sign bit.
-Arithmetic shift is not a separate signed-number datatype—the top bit is its
-sign source.
+Arithmetic shift takes its sign from the top bit.
 
 ## Wide values
 
-Arithmetic is not limited to u64. Hex/decimal input and multiplication/division
-use large integer values behind the circuit's four-state vector representation.
-The 4096-bit resource cap still applies, and large data paths cost more
-simulation/render time. Select widths and carry pins remain much smaller than
-the main bus.
+Arithmetic supports buses from 1 to 4096 bits. Enter wide values in hexadecimal
+or decimal, and choose operand/output widths to retain the bits you need.
