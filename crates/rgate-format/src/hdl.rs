@@ -514,3 +514,36 @@ mod tests {
         assert!(ds[0].source.contains("`timescale"));
     }
 }
+
+/// Import a source file as editable definitions; the caller may choose any root.
+pub fn import_source(source: &str) -> Result<crate::ImportResult> {
+    let definitions = definitions(source)?;
+    let root = definitions[0].name.clone();
+    let circuit = rgate_core::Circuit {
+        title: format!("Verilog: {root}"),
+        root,
+        modules: definitions
+            .into_iter()
+            .map(module_from_definition)
+            .collect(),
+    };
+    circuit.validate()?;
+    Ok(crate::ImportResult {
+        circuit,
+        warnings: Vec::new(),
+    })
+}
+
+#[cfg(test)]
+mod import_tests {
+    #[test]
+    fn imports_multiple_definitions_and_roundtrips() {
+        let result=crate::parse("module top(input a,output y);child u(a,y);endmodule\nmodule child(input a,output y);assign y=~a;endmodule").unwrap();
+        assert_eq!(result.circuit.modules.len(), 2);
+        assert_eq!(result.circuit.root, "top");
+        assert_eq!(
+            crate::native::decode(&crate::native::encode(&result.circuit).unwrap()).unwrap(),
+            result.circuit
+        );
+    }
+}

@@ -24,7 +24,11 @@ pub fn parse(source: &str) -> Result<ImportResult> {
             warnings: Vec::new(),
         });
     }
-    tkgate::import(source)
+    if source.contains("//:") {
+        tkgate::import(source)
+    } else {
+        hdl::import_source(source)
+    }
 }
 
 pub fn load(path: &Path) -> Result<ImportResult> {

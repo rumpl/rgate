@@ -97,6 +97,11 @@ pub struct NetDialog {
 }
 
 pub enum Dialog {
+    HdlTop {
+        circuit: Circuit,
+        path: Option<PathBuf>,
+        selected: String,
+    },
     Verilog {
         creating: bool,
         name: Entity<TextField>,
@@ -733,6 +738,23 @@ impl GateApp {
     }
 
     fn replace_circuit(&mut self, circuit: Circuit, path: Option<PathBuf>) {
+        if path
+            .as_ref()
+            .is_some_and(|p| p.extension().is_some_and(|s| s == "v" || s == "sv"))
+            && circuit.modules.iter().all(|m| m.verilog.is_some())
+            && circuit.modules.len() > 1
+        {
+            let selected = circuit.root.clone();
+            self.dialog = Some(Dialog::HdlTop {
+                circuit,
+                path,
+                selected,
+            });
+            return;
+        }
+        self.load_document(circuit, path);
+    }
+    fn load_document(&mut self, circuit: Circuit, path: Option<PathBuf>) {
         self.icarus_pwm = false;
         self.flush_workspace();
         match Editor::new(circuit) {
@@ -884,7 +906,7 @@ impl GateApp {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Open a .rgate or TkGate .v circuit".into()),
+            prompt: Some("Open a .rgate circuit or Verilog .v/.sv source".into()),
         });
         self.prompting = true;
         cx.spawn_in(window, async move |entity, cx| {
@@ -1455,6 +1477,20 @@ impl GateApp {
     }
 
     pub fn apply_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(Dialog::HdlTop {
+            circuit,
+            path,
+            selected,
+        }) = self.dialog.as_ref()
+        {
+            let mut circuit = circuit.clone();
+            circuit.root = selected.clone();
+            let path = path.clone();
+            self.dialog = None;
+            self.load_document(circuit, path);
+            cx.notify();
+            return;
+        }
         if let Some(Dialog::Find { query }) = &self.dialog {
             if let Some(result) = rgate_editor::search(self.editor.circuit(), &query.read(cx).value)
                 .into_iter()

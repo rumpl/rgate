@@ -1353,6 +1353,7 @@ impl GateApp {
     fn dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let dialog = self.dialog.as_ref()?;
         let (title, width) = match dialog {
+            Dialog::HdlTop { .. } => ("Choose top module", 440.0),
             Dialog::Verilog { .. } => ("Verilog module source", 900.0),
             Dialog::HdlInput { .. } => ("Set HDL input (hex)", 400.0),
             Dialog::Symbol(_) => ("Module symbol editor", 640.0),
@@ -1389,6 +1390,30 @@ impl GateApp {
         let mut content = div().flex().flex_col().gap(px(10.0)).p(px(16.0));
         let mut apply = false;
         match dialog {
+            Dialog::HdlTop {
+                circuit, selected, ..
+            } => {
+                apply = true;
+                content=content.child("Choose the module to run first. All source definitions will be available in Modules.");
+                for module in &circuit.modules {
+                    let name = module.name.clone();
+                    content = content.child(
+                        div()
+                            .id(SharedString::from(format!("top-{name}")))
+                            .cursor_pointer()
+                            .child(format!(
+                                "{} {name}",
+                                if name == *selected { "●" } else { "○" }
+                            ))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if let Some(Dialog::HdlTop { selected, .. }) = &mut this.dialog {
+                                    *selected = name.clone();
+                                }
+                                cx.notify();
+                            })),
+                    );
+                }
+            }
             Dialog::Verilog {
                 creating,
                 name,

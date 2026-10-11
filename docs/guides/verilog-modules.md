@@ -21,6 +21,14 @@ Stop simulation, change the PWM expression, and run again to see your change.
 Source edits become part of the document as you type; **File → Save** keeps them
 in the `.rgate` file.
 
+## Open an existing source file
+
+Choose **File → Open…** and select a `.v` or `.sv` file. RGate imports its
+module definitions and infers their ports. If the file has several definitions,
+choose the top module in the dialog. Select any definition in Modules to edit
+it. Save as `.rgate` to keep the source definitions with your schematic
+workspace.
+
 ## Create a module
 
 Choose **Module → New Verilog module…**. Give it a name that matches the source
