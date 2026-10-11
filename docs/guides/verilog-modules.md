@@ -88,9 +88,12 @@ easier.
 
 ## Inspect signals and diagnose source
 
-Click `○` beside a declared signal to record it in Waveforms. Outputs and
-internal observations appear in Nets with their live values. Navigate to a
-specific schematic instance to inspect that copy while the simulation continues.
+Choose **Simulate → Browse HDL signals…** to explore live hierarchy. Filter by
+an instance path, click a signal to inspect its value, and choose Probe to
+record it without restarting simulation. Click `○` beside a declared signal to
+record it in Waveforms. Outputs and internal observations appear in Nets with
+their live values. Navigate to a specific schematic instance to inspect that
+copy while the simulation continues.
 
 If a run reports an error, read Messages for the source location or signal name.
 Check the module declaration, interface names, and bus widths, correct the

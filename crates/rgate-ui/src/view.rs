@@ -1353,6 +1353,7 @@ impl GateApp {
     fn dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let dialog = self.dialog.as_ref()?;
         let (title, width) = match dialog {
+            Dialog::HdlSignals { .. } => ("Live HDL signals", 700.0),
             Dialog::HdlTop { .. } => ("Choose top module", 440.0),
             Dialog::Verilog { .. } => ("Verilog module source", 900.0),
             Dialog::HdlInput { .. } => ("Set HDL input (hex)", 400.0),
@@ -1390,6 +1391,63 @@ impl GateApp {
         let mut content = div().flex().flex_col().gap(px(10.0)).p(px(16.0));
         let mut apply = false;
         match dialog {
+            Dialog::HdlSignals { query } => {
+                content=content.child(query.clone()).child("Click a signal to inspect its live value; Probe records its waveform. Filter by an instance path to explore that scope.");
+                let mut list = div()
+                    .id("hdl-signals-list")
+                    .h(px(350.0))
+                    .overflow_y_scroll();
+                #[cfg(feature = "icarus")]
+                if let Some(sim) = &self.simulation {
+                    let filter = query.read(cx).value.to_ascii_lowercase();
+                    for (index, signal) in sim
+                        .discovered_signals()
+                        .iter()
+                        .filter(|s| s.path.to_ascii_lowercase().contains(&filter))
+                        .take(2000)
+                        .enumerate()
+                    {
+                        let path = signal.path.clone();
+                        let probe_path = path.clone();
+                        let value = sim
+                            .hdl_bound_value(&path)
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| "Inspect".into());
+                        list = list.child(
+                            div()
+                                .id(("hdl-signal", index))
+                                .flex()
+                                .gap(px(8.0))
+                                .child(
+                                    div()
+                                        .id(("hdl-inspect", index))
+                                        .flex_1()
+                                        .cursor_pointer()
+                                        .child(format!("{} [{} bits]  {value}", path, signal.width))
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.inspect_hdl_signal(&path, false, cx)
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .id(("hdl-probe", index))
+                                        .cursor_pointer()
+                                        .child("Probe / Remove")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.inspect_hdl_signal(&probe_path, true, cx)
+                                        })),
+                                ),
+                        );
+                    }
+                }
+                #[cfg(not(feature = "icarus"))]
+                {
+                    list = list.child(
+                        "Open a Verilog circuit in desktop RGate to inspect live HDL signals.",
+                    );
+                }
+                content = content.child(list);
+            }
             Dialog::HdlTop {
                 circuit, selected, ..
             } => {

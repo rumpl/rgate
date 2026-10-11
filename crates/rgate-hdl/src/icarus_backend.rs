@@ -28,6 +28,7 @@ pub struct IcarusBackend {
     ticks: u64,
     scale: u64,
     failed: bool,
+    top: String,
 }
 
 impl IcarusBackend {
@@ -110,6 +111,7 @@ impl IcarusBackend {
             ticks: 0,
             scale: 1,
             failed: false,
+            top: top.into(),
         };
         backend.receive()?;
         backend.request("LIST")?;
@@ -130,6 +132,44 @@ impl IcarusBackend {
             backend.request(&format!("BIND {path}"))?;
         }
         Ok(backend)
+    }
+    /// Bind a discovered packed signal without recompiling or resetting time.
+    pub fn bind_discovered(
+        &mut self,
+        path: &str,
+        input: bool,
+    ) -> Result<(NetId, Option<GateId>), SimError> {
+        let relative = path
+            .strip_prefix(&format!("{}.", self.top))
+            .ok_or_else(|| error("signal belongs to a different top"))?;
+        if let Some(signal) = self.signals.iter().find(|s| s.path == relative) {
+            return Ok((signal.net, signal.input));
+        }
+        if self.signals.len() >= 256 {
+            return Err(error("live signal binding limit is 256"));
+        }
+        let discovered = self
+            .discovered
+            .iter()
+            .find(|s| s.path == path)
+            .ok_or_else(|| error("unknown HDL signal"))?;
+        if discovered.width == 0 || discovered.width > 4096 || path.chars().any(char::is_whitespace)
+        {
+            return Err(error("unsupported signal path or width"));
+        }
+        let net = NetId(self.signals.iter().map(|s| s.net.0).max().unwrap_or(0) + 1);
+        let gate = input.then_some(GateId(3_000_000 + net.0));
+        self.signals.push(HdlSignal {
+            net,
+            path: relative.into(),
+            width: discovered.width,
+            input: gate,
+        });
+        if let Err(error) = self.request(&format!("BIND {path}")) {
+            self.signals.pop();
+            return Err(error);
+        }
+        Ok((net, gate))
     }
     pub fn unprobe(&mut self, net: NetId) {
         self.traces.remove(&net);

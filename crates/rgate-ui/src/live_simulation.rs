@@ -42,6 +42,30 @@ impl LiveSimulation {
         }
         "Rust schematic"
     }
+    #[cfg(feature = "icarus")]
+    pub fn discovered_signals(&self) -> &[rgate_hdl::DiscoveredSignal] {
+        self.hdl
+            .as_ref()
+            .map_or(&[], |hdl| hdl.discovered_signals())
+    }
+    #[cfg(feature = "icarus")]
+    pub fn inspect_hdl(&mut self, path: &str) -> Result<NetId, SimError> {
+        let hdl = self
+            .hdl
+            .as_mut()
+            .ok_or_else(|| SimError::Invalid("No HDL runtime".into()))?;
+        let (net, _) = hdl.bind_discovered(path, false)?;
+        Ok(net)
+    }
+    #[cfg(feature = "icarus")]
+    pub fn hdl_bound_value(&self, path: &str) -> Option<&Signal> {
+        let hdl = self.hdl.as_ref()?;
+        let signal = hdl
+            .signals()
+            .iter()
+            .find(|s| path.ends_with(&format!(".{}", s.path)))?;
+        hdl.value(signal.net)
+    }
     pub fn time(&self) -> u64 {
         #[cfg(feature = "icarus")]
         if let Some(hdl) = &self.hdl {

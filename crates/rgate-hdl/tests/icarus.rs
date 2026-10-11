@@ -150,3 +150,22 @@ fn exact_subnanosecond_steps_and_invalid_inputs() {
         .is_err()
     );
 }
+
+#[test]
+fn binds_internal_signals_without_resetting_runtime() {
+    let source = "`timescale 1ns/1ps\nmodule child(input clk);reg [7:0] count=0;always @(posedge clk)count<=count+1;endmodule\nmodule top;reg clk=0;always #5 clk=~clk;child u(clk);endmodule";
+    let mut backend = IcarusBackend::new(vec![source.into()], "top", vec![]).unwrap();
+    backend.advance(16).unwrap();
+    let before = backend.time_ticks();
+    let (net, _) = backend.bind_discovered("top.u.count", false).unwrap();
+    assert_eq!(backend.time_ticks(), before);
+    assert_eq!(backend.value(net).unwrap().to_u64(), Some(2));
+    backend.probe(net).unwrap();
+    backend.advance(10).unwrap();
+    assert_eq!(backend.value(net).unwrap().to_u64(), Some(3));
+    assert_eq!(
+        backend.bind_discovered("top.u.count", false).unwrap().0,
+        net
+    );
+    assert!(backend.bind_discovered("top.missing", false).is_err());
+}

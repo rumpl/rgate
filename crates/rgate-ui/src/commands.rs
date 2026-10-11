@@ -75,6 +75,7 @@ pub enum Command {
     EditVerilog,
     VerilogInterface,
     SetHdlInput,
+    HdlSignals,
     Find,
     Align(rgate_editor::Align),
     Distribute(rgate_editor::Distribute),
@@ -194,6 +195,7 @@ pub fn entries(menu: &str) -> Vec<MenuEntry> {
         "Simulate" => vec![
             E::item("Run / pause", "Space", C::PlayPause),
             E::item("Stop simulation", "", C::Stop),
+            E::item("Browse HDL signals…", "", C::HdlSignals),
             E::item("Step event", "F6", C::Step),
             E::item("Advance clock cycle", "Tab", C::ClockStep),
             E::separator(),

@@ -97,6 +97,9 @@ pub struct NetDialog {
 }
 
 pub enum Dialog {
+    HdlSignals {
+        query: Entity<TextField>,
+    },
     HdlTop {
         circuit: Circuit,
         path: Option<PathBuf>,
@@ -356,7 +359,7 @@ impl GateApp {
         }
         if matches!(
             self.dialog,
-            Some(Dialog::Terminal { .. } | Dialog::Vga { .. })
+            Some(Dialog::Terminal { .. } | Dialog::Vga { .. } | Dialog::HdlSignals { .. })
         ) && matches!(
             command,
             Command::PlayPause | Command::Step | Command::ClockStep
@@ -657,6 +660,15 @@ impl GateApp {
                 self.edit_verilog(false, window, cx);
             }
             Command::VerilogInterface => self.edit_verilog(false, window, cx),
+            Command::HdlSignals => {
+                if self.ensure_simulator() {
+                    self.dialog = Some(Dialog::HdlSignals {
+                        query: cx.new(|cx| {
+                            TextField::new("", cx).with_placeholder("Filter hierarchical signals…")
+                        }),
+                    });
+                }
+            }
             Command::SetHdlInput => {
                 #[cfg(feature = "icarus")]
                 if self.ensure_simulator()
@@ -1098,6 +1110,38 @@ impl GateApp {
     pub fn displayed_value(&self, net: NetId) -> Option<&Signal> {
         self.simulation.as_ref()?.value(self.simulation_net(net)?)
     }
+    pub fn inspect_hdl_signal(&mut self, path: &str, probe: bool, cx: &mut Context<Self>) {
+        #[cfg(feature = "icarus")]
+        {
+            let result = (|| {
+                let sim = self
+                    .simulation
+                    .as_mut()
+                    .ok_or_else(|| rgate_sim::SimError::Invalid("Simulation inactive".into()))?;
+                let net = sim.inspect_hdl(path)?;
+                if probe {
+                    if self.probes.remove(&net) {
+                        sim.unprobe(net);
+                    } else {
+                        sim.probe(net)?;
+                        sim.label_probe(net, path.replace('.', "/"));
+                        self.probes.insert(net);
+                    }
+                    self.bottom_scope = true;
+                }
+                Ok::<_, rgate_sim::SimError>(())
+            })();
+            if let Err(error) = result {
+                self.error(error);
+            }
+        }
+        #[cfg(not(feature = "icarus"))]
+        {
+            let _ = (path, probe);
+            self.log("HDL signal inspection is available on desktop.".into());
+        }
+        cx.notify();
+    }
     pub fn is_probed(&self, net: NetId) -> bool {
         self.probes
             .contains(&self.simulation_net(net).unwrap_or(net))
@@ -1506,7 +1550,7 @@ impl GateApp {
         }
         if matches!(
             self.dialog,
-            Some(Dialog::Help | Dialog::About | Dialog::Vga { .. })
+            Some(Dialog::Help | Dialog::About | Dialog::Vga { .. } | Dialog::HdlSignals { .. })
         ) {
             self.dialog = None;
             self.focus.focus(window, cx);
