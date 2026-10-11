@@ -123,3 +123,6 @@ mod viewport_tests;
 mod source_editor;
 
 mod hdl_diagnostics;
+
+#[cfg(feature = "icarus")]
+mod compilation;

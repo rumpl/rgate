@@ -153,7 +153,12 @@ pub enum Dialog {
 }
 
 pub struct GateApp {
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pub background_compilation: bool,
+    #[cfg(feature = "icarus")]
+    pub compilation: Option<crate::compilation::Compilation>,
     pub hdl_diagnostics: Vec<crate::hdl_diagnostics::HdlDiagnostic>,
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub diagnostic_line: Option<u32>,
     #[cfg(not(target_family = "wasm"))]
     pub source_editor: Option<crate::source_editor::SourceEditor>,
@@ -222,7 +227,9 @@ impl GateApp {
             cx.notify();
         })
         .detach();
-        let mut this = Self {
+        let mut this = Self {background_compilation:false,
+            #[cfg(feature="icarus")]
+            compilation:None,
             hdl_diagnostics:Vec::new(),diagnostic_line:None,
             #[cfg(not(target_family="wasm"))]
             source_editor:None,
@@ -246,6 +253,8 @@ impl GateApp {
                     .timer(Duration::from_millis(40))
                     .await;
                 let result = entity.update(cx, |this, cx| {
+                    #[cfg(feature = "icarus")]
+                    this.poll_compilation(cx);
                     if this.running {
                         this.advance_running(cx);
                     }
@@ -317,13 +326,15 @@ impl GateApp {
         }
     }
 
-    fn error(&mut self, error: impl std::fmt::Display) {
+    pub(crate) fn error(&mut self, error: impl std::fmt::Display) {
         let message = error.to_string();
         self.hdl_diagnostics = crate::hdl_diagnostics::parse(&message);
         self.log(format!("Error: {message}"));
     }
 
     pub fn changed(&mut self) {
+        #[cfg(feature = "icarus")]
+        self.cancel_compilation();
         self.simulation = None;
         self.debug_path = None;
         self.probes.clear();
@@ -414,6 +425,10 @@ impl GateApp {
     }
 
     fn execute(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(feature = "icarus")]
+        if self.compile_before_command(&command, window, cx) {
+            return;
+        }
         match command {
             Command::New => self.replace_circuit(Circuit::default(), None),
             Command::Example(name) => {
@@ -556,6 +571,8 @@ impl GateApp {
                 }
             }
             Command::Stop => {
+                #[cfg(feature = "icarus")]
+                self.cancel_compilation();
                 self.remember_view();
                 self.simulation = None;
                 self.debug_path = None;
@@ -1110,6 +1127,7 @@ impl GateApp {
     pub fn displayed_value(&self, net: NetId) -> Option<&Signal> {
         self.simulation.as_ref()?.value(self.simulation_net(net)?)
     }
+    #[cfg_attr(not(feature = "icarus"), allow(dead_code))]
     pub fn inspect_hdl_signal(&mut self, path: &str, probe: bool, cx: &mut Context<Self>) {
         #[cfg(feature = "icarus")]
         {
@@ -1249,6 +1267,8 @@ impl GateApp {
     pub fn set_tab(&mut self, tab: WorkspaceTab, window: &mut Window, cx: &mut Context<Self>) {
         match tab {
             WorkspaceTab::Edit => {
+                #[cfg(feature = "icarus")]
+                self.cancel_compilation();
                 self.remember_view();
                 self.running = false;
                 self.simulation = None;
@@ -1262,6 +1282,19 @@ impl GateApp {
                 self.tab = tab;
             }
             WorkspaceTab::Simulate => {
+                #[cfg(feature = "icarus")]
+                if self.background_compilation
+                    && self.simulation.is_none()
+                    && self
+                        .editor
+                        .circuit()
+                        .modules
+                        .iter()
+                        .any(|m| m.verilog.is_some())
+                {
+                    self.start_compilation(Command::ClockStep, cx);
+                    return;
+                }
                 if self.ensure_simulator() {
                     self.tab = tab;
                     self.bottom_scope = true;

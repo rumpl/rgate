@@ -29,11 +29,16 @@ impl GateApp {
                 ))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
+        let before = self.editor.clone();
         for (name, nets) in updates {
-            self.editor.switch_module(&name)?;
-            let result = self.editor.edit_module(|m| m.nets = nets);
-            self.editor.switch_module(&active)?;
-            result?;
+            if let Err(error) = (|| {
+                self.editor.switch_module(&name)?;
+                self.editor.edit_module(|m| m.nets = nets)?;
+                self.editor.switch_module(&active)
+            })() {
+                self.editor = before;
+                return Err(error.into());
+            }
         }
         Ok(())
     }

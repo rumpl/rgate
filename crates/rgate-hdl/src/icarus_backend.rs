@@ -6,7 +6,11 @@ use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader, Write},
     process::{Child, ChildStdin, Command, Stdio},
-    sync::mpsc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -33,6 +37,17 @@ pub struct IcarusBackend {
 
 impl IcarusBackend {
     pub fn new(sources: Vec<String>, top: &str, signals: Vec<HdlSignal>) -> Result<Self, SimError> {
+        Self::new_cancellable(sources, top, signals, &Arc::new(AtomicBool::new(false)))
+    }
+    pub fn new_cancellable(
+        sources: Vec<String>,
+        top: &str,
+        signals: Vec<HdlSignal>,
+        cancel: &Arc<AtomicBool>,
+    ) -> Result<Self, SimError> {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(error("Compilation cancelled"));
+        }
         if !identifier(top)
             || signals.len() > 256
             || signals
@@ -65,6 +80,7 @@ impl IcarusBackend {
             Command::new(tool("iverilog-vpi"))
                 .current_dir(root)
                 .arg("rgate_bridge.c"),
+            cancel,
         )?;
         let mut compiler = Command::new(tool("iverilog"));
         compiler
@@ -75,7 +91,10 @@ impl IcarusBackend {
             std::fs::write(root.join(&name), source).map_err(|e| error(e.to_string()))?;
             compiler.arg(name);
         }
-        run_tool(&mut compiler)?;
+        run_tool(&mut compiler, cancel)?;
+        if cancel.load(Ordering::Relaxed) {
+            return Err(error("Compilation cancelled"));
+        }
         let mut child = Command::new(tool("vvp"))
             .current_dir(root)
             .args(["-M.", "-mrgate_bridge", "design.vvp"])
@@ -348,17 +367,56 @@ impl SimulationBackend for IcarusBackend {
         &self.traces
     }
 }
-fn run_tool(command: &mut Command) -> Result<(), SimError> {
-    // Compilation is separate from the persistent runtime; report compiler diagnostics.
-    let output = command
-        .output()
+fn run_tool(command: &mut Command, cancel: &Arc<AtomicBool>) -> Result<(), SimError> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| error(format!("{command:?}: {e}; install icarus-verilog")))?;
-    if !output.status.success() {
-        return Err(error(format!(
-            "{command:?}: {}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )));
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let out = std::thread::spawn(move || {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut BufReader::new(stdout), &mut text).map(|_| text)
+    });
+    let err = std::thread::spawn(move || {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut BufReader::new(stderr), &mut text).map(|_| text)
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let result = loop {
+        if cancel.load(Ordering::Relaxed) || std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break Err(error(if cancel.load(Ordering::Relaxed) {
+                "Compilation cancelled"
+            } else {
+                "Compiler exceeded 60 seconds"
+            }));
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break Err(error(e.to_string()));
+            }
+        }
+    };
+    // Drainers own their pipes; cancellation does not wait on a descendant
+    // compiler that may retain them. Completed runs collect both diagnostics.
+    let status = result?;
+    let stdout = out
+        .join()
+        .map_err(|_| error("compiler stdout thread failed"))?
+        .map_err(|e| error(e.to_string()))?;
+    let stderr = err
+        .join()
+        .map_err(|_| error("compiler stderr thread failed"))?
+        .map_err(|e| error(e.to_string()))?;
+    if !status.success() {
+        return Err(error(format!("{command:?}: {stdout}{stderr}")));
     }
     Ok(())
 }

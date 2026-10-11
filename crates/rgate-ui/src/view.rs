@@ -903,7 +903,13 @@ impl GateApp {
                 self.simulation.as_ref().unwrap().backend_name()
             )));
         }
-        let state = if self.running {
+        #[cfg(feature = "icarus")]
+        let compiling = self.compilation.is_some();
+        #[cfg(not(feature = "icarus"))]
+        let compiling = false;
+        let state = if compiling {
+            "Compiling · Stop cancels"
+        } else if self.running {
             "Running"
         } else if self.simulation.is_some() {
             "Paused"

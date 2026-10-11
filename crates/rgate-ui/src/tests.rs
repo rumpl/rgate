@@ -1879,3 +1879,38 @@ fn compiler_diagnostics_reach_source_editor(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
 }
+
+#[cfg(feature = "icarus")]
+#[gpui::test]
+fn compilation_worker_finishes_and_stop_cancels(cx: &mut TestAppContext) {
+    let (view, cx) =
+        cx.add_window_view(|window, cx| GateApp::new(demo::full_adder(), None, window, cx));
+    cx.update(|window, cx| {
+        view.update(cx, |app, cx| {
+            app.command(Command::Example("pwm-verilog"), window, cx);
+            app.background_compilation = true;
+            app.command(Command::ClockStep, window, cx);
+            assert!(app.compilation.is_some());
+            assert!(app.simulation.is_none());
+        })
+    });
+    for _ in 0..200 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        cx.update(|_, cx| view.update(cx, |app, cx| app.poll_compilation(cx)));
+        if view.read_with(cx, |app, _| app.simulation.is_some()) {
+            break;
+        }
+    }
+    view.read_with(cx, |app, _| {
+        assert!(app.simulation.is_some(), "{:?}", app.messages)
+    });
+    cx.update(|window, cx| {
+        view.update(cx, |app, cx| {
+            app.command(Command::Stop, window, cx);
+            app.command(Command::ClockStep, window, cx);
+            assert!(app.compilation.is_some());
+            app.command(Command::Stop, window, cx);
+            assert!(app.compilation.is_none());
+        })
+    });
+}

@@ -169,3 +169,15 @@ fn binds_internal_signals_without_resetting_runtime() {
     );
     assert!(backend.bind_discovered("top.missing", false).is_err());
 }
+
+#[test]
+fn cancelled_compilation_does_not_launch_runtime() {
+    let token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    assert!(
+        IcarusBackend::new_cancellable(vec!["module top;endmodule".into()], "top", vec![], &token)
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("cancelled")
+    );
+}

@@ -149,6 +149,18 @@ impl LiveSimulation {
     }
     #[cfg(feature = "icarus")]
     pub fn verilog(circuit: &rgate_core::Circuit, root: &str) -> Result<Self, SimError> {
+        Self::verilog_cancellable(
+            circuit,
+            root,
+            &std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+    }
+    #[cfg(feature = "icarus")]
+    pub fn verilog_cancellable(
+        circuit: &rgate_core::Circuit,
+        root: &str,
+        cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<Self, SimError> {
         let exported = rgate_format::export_interactive(circuit)
             .map_err(|e| SimError::Invalid(e.to_string()))?;
         let mut metadata = circuit.clone();
@@ -247,7 +259,7 @@ impl LiveSimulation {
         } else {
             root
         };
-        let hdl = rgate_hdl::IcarusBackend::new(sources, top, bindings)?;
+        let hdl = rgate_hdl::IcarusBackend::new_cancellable(sources, top, bindings, cancel)?;
         Ok(Self {
             schematic,
             hdl: Some(hdl),

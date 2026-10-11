@@ -17,6 +17,9 @@ DIP inputs, and LEDs to create an interactive circuit.
 5. Probe `pwm_out` to see the pulse width in Waveforms.
 6. Open the live `dimmer` instance and probe `cnt` to follow the counter.
 
+RGate shows compilation progress while keeping the workspace responsive. Click
+Stop to cancel a compile.
+
 Stop simulation, change the PWM expression, and run again to see your change.
 Source edits become part of the document as you type; **File → Save** keeps them
 in the `.rgate` file.
