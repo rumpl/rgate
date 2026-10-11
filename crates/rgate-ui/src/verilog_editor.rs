@@ -7,6 +7,36 @@ use rgate_core::{Direction, Net, NetId};
 
 pub const TEMPLATE: &str = "`timescale 1ns/1ps\nmodule MODULE(input wire clk, input wire reset, input wire enable, output reg [7:0] count);\n    always @(posedge clk)\n        if (reset) count <= 0;\n        else if (enable) count <= count + 1;\nendmodule\n";
 impl GateApp {
+    pub fn refresh_verilog_ports(&mut self) -> anyhow::Result<()> {
+        let active = self.editor.active_module().to_owned();
+        let sources = self
+            .editor
+            .circuit()
+            .modules
+            .iter()
+            .filter_map(|m| {
+                m.verilog
+                    .as_ref()
+                    .map(|s| (m.name.clone(), s.clone(), m.nets.clone()))
+            })
+            .collect::<Vec<_>>();
+        let updates = sources
+            .into_iter()
+            .map(|(name, source, nets)| {
+                Ok((
+                    name.clone(),
+                    rgate_format::hdl::inferred_nets(&source, &name, &nets)?,
+                ))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        for (name, nets) in updates {
+            self.editor.switch_module(&name)?;
+            let result = self.editor.edit_module(|m| m.nets = nets);
+            self.editor.switch_module(&active)?;
+            result?;
+        }
+        Ok(())
+    }
     pub fn edit_verilog(&mut self, creating: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.simulation.is_some() {
             self.log("Stop simulation before editing Verilog.".into());

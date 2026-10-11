@@ -1406,7 +1406,7 @@ impl GateApp {
                         .child(div().id("verilog-source-scroll").h(px(300.0)).overflow_y_scroll().child(source.clone()));
                 }
                 content = content
-                    .child("Interface / observed signals: input|output|inout|signal name width")
+                    .child("Ports are inferred from source. Add internal observations: signal name width")
                     .child(
                         div()
                             .id("verilog-interface-scroll")

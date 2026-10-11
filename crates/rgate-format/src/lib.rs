@@ -1,4 +1,5 @@
 mod component_verilog;
+pub mod hdl;
 pub mod native;
 pub mod tkgate;
 pub mod verilog;

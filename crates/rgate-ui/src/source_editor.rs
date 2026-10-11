@@ -1,4 +1,4 @@
-//! Zed's editor and language buffer, fetched at the same revision as GPUI.
+//! Published code editor and Verilog language integration.
 use crate::{
     app::{GateApp, WorkspaceTab},
     commands::Command,

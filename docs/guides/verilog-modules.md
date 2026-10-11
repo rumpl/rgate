@@ -44,22 +44,14 @@ module counter (
 endmodule
 ```
 
-Declare the signals RGate should expose, one per line in the interface field:
+RGate reads input, output, and inout ports from the source, including packed bus
+widths and default parameter expressions. Click Apply to create the module. Edit
+source in the Edit tab; starting a run refreshes the inferred ports.
 
-```text
-input clk 1
-input reset 1
-input enable 1
-output count 8
-```
-
-Each line has a direction, a name, and a width in bits. Use `input`, `output`,
-`inout`, or `signal`; `signal` adds an internal signal for inspection. Match the
-names and widths to the source. Use **Interface…** to update this list later.
-
-Click Apply, then edit the source in the **Edit** tab. The editor provides
-syntax colors, line numbers, scrolling, selection, indentation, search, and
-undo/redo. You can keep a work-in-progress source file and run it when ready.
+Use **Interface…** to add an internal signal for inspection with a line such as
+`signal internal_state 8`. Port names and widths come from the source. Keep
+connected port widths consistent with the parent schematic; disconnect affected
+pins before changing widths.
 
 ## Connect it to a schematic
 

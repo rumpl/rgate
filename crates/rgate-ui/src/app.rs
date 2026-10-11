@@ -990,6 +990,10 @@ impl GateApp {
         if self.simulation.is_some() {
             return true;
         }
+        if let Err(error) = self.refresh_verilog_ports() {
+            self.error(error);
+            return false;
+        }
         let result: std::result::Result<LiveSimulation, rgate_sim::SimError> = if self
             .editor
             .circuit()
@@ -1498,8 +1502,21 @@ impl GateApp {
                     anyhow::bail!("Use a simple Verilog module name");
                 }
                 let source = source.read(cx).value.clone();
-                let mut nets = crate::verilog_editor::interface(&interface.read(cx).value)
+                let observations = crate::verilog_editor::interface(&interface.read(cx).value)
                     .map_err(anyhow::Error::msg)?;
+                let mut existing = if *creating {
+                    Vec::new()
+                } else {
+                    self.editor.module().nets.clone()
+                };
+                for net in observations.into_iter().filter(|n| n.port.is_none()) {
+                    if !existing.iter().any(|n| n.name == net.name) {
+                        let mut net = net;
+                        net.id = NetId(existing.iter().map(|n| n.id.0).max().unwrap_or(0) + 1);
+                        existing.push(net);
+                    }
+                }
+                let mut nets = rgate_format::hdl::inferred_nets(&source, &name, &existing)?;
                 if source.trim().is_empty() || source.len() > 1_000_000 {
                     anyhow::bail!("Source must contain 1–1000000 bytes");
                 }
