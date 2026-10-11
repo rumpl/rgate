@@ -1769,7 +1769,7 @@ fn editable_verilog_pwm_is_instantiated_in_schematic_and_inspected_live(cx: &mut
             app.toggle_probe(NetId(4), cx);
             app.command(Command::Stop, window, cx);
             app.command(Command::VerilogInterface, window, cx);
-            assert!(matches!(app.dialog, Some(Dialog::Verilog { .. })));
+            assert!(matches!(app.dialog, Some(Dialog::VerilogPorts { .. })));
         })
     });
     cx.run_until_parked();
@@ -1913,4 +1913,91 @@ fn compilation_worker_finishes_and_stop_cancels(cx: &mut TestAppContext) {
             assert!(app.compilation.is_none());
         })
     });
+}
+
+#[cfg(feature = "icarus")]
+#[gpui::test]
+fn invalid_verilog_edits_show_errors_without_running(cx: &mut TestAppContext) {
+    let circuit = rgate_format::parse(include_str!("../../../examples/verilog-led-chaser.rgate"))
+        .unwrap()
+        .circuit;
+    let (view, cx) = cx.add_window_view(|window, cx| GateApp::new(circuit, None, window, cx));
+    cx.update(|_, cx| view.update(cx, |app, cx| app.switch_module("led_chaser".into(), cx)));
+    cx.run_until_parked();
+    let editor_bounds = cx.debug_bounds("source-editor-content").unwrap();
+    cx.update(|window, cx| {
+        view.update(cx, |app, cx| {
+            let input = app.source_editor.as_ref().unwrap().input.clone();
+            let source = input
+                .read(cx)
+                .value()
+                .to_string()
+                .replace("divider <= 0;", "divider <= 0");
+            input.update(cx, |state, cx| state.replace_all(source, window, cx));
+        })
+    });
+    cx.run_until_parked();
+    for _ in 0..150 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        cx.update(|_, cx| view.update(cx, |app, cx| app.poll_source_check(cx)));
+        if view.read_with(cx, |app, _| !app.hdl_diagnostics.is_empty()) {
+            break;
+        }
+    }
+    cx.run_until_parked();
+    assert_eq!(
+        cx.debug_bounds("source-editor-content").unwrap(),
+        editor_bounds
+    );
+    view.read_with(cx, |app, _| {
+        assert!(!app.hdl_diagnostics.is_empty());
+        assert!(app.simulation.is_none());
+    });
+    cx.update(|window, cx| {
+        view.update(cx, |app, cx| {
+            let input = app.source_editor.as_ref().unwrap().input.clone();
+            input.update(cx, |state, cx| {
+                state.replace_all(
+                    include_str!("../../../examples/verilog/led-chaser.sv"),
+                    window,
+                    cx,
+                )
+            });
+        })
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |app, _| assert!(app.hdl_diagnostics.is_empty()));
+}
+
+#[gpui::test]
+fn verilog_ports_summary_refreshes_source_without_manual_interface_fields(cx: &mut TestAppContext) {
+    let circuit = rgate_format::parse(include_str!("../../../examples/verilog-led-chaser.rgate"))
+        .unwrap()
+        .circuit;
+    let (view, cx) = cx.add_window_view(|window, cx| GateApp::new(circuit, None, window, cx));
+    cx.update(|window, cx| {
+        view.update(cx, |app, cx| {
+            app.switch_module("led_chaser".into(), cx);
+            app.command(Command::VerilogInterface, window, cx);
+            assert!(matches!(app.dialog, Some(Dialog::VerilogPorts { .. })));
+            app.apply_dialog(window, cx);
+            assert!(matches!(
+                app.dialog,
+                Some(Dialog::VerilogPorts { error: None, .. })
+            ));
+            assert_eq!(
+                app.editor
+                    .module()
+                    .nets
+                    .iter()
+                    .filter(|n| n.port.is_some())
+                    .count(),
+                6
+            );
+        })
+    });
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("verilog-interface-scroll").is_none());
+    cx.update(|window, cx| view.update(cx, |app, cx| app.dismiss_dialog(window, cx)));
+    assert!(view.read_with(cx, |app, _| app.dialog.is_none()));
 }

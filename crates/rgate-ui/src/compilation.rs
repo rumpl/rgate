@@ -27,6 +27,8 @@ impl GateApp {
         if self.compilation.is_some() {
             return;
         }
+        self.lint_due = None;
+        self.lint_result = None;
         if let Err(error) = self.refresh_verilog_ports() {
             self.error(error);
             return;
@@ -128,5 +130,53 @@ impl GateApp {
             return true;
         }
         false
+    }
+}
+
+impl GateApp {
+    pub fn poll_source_check(&mut self, cx: &mut Context<Self>) {
+        if let Some((snapshot, receiver)) = &self.lint_result {
+            match receiver.try_recv() {
+                Ok(result) => {
+                    let current = self.editor.circuit() == snapshot;
+                    self.lint_result = None;
+                    if current {
+                        self.hdl_diagnostics = match result {
+                            Ok(()) => Vec::new(),
+                            Err(error) => crate::hdl_diagnostics::parse(&error.to_string()),
+                        };
+                        cx.notify();
+                    }
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.lint_result = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if self.lint_result.is_none()
+            && self.simulation.is_none()
+            && self.compilation.is_none()
+            && self
+                .lint_due
+                .is_some_and(|due| std::time::Instant::now() >= due)
+        {
+            self.lint_due = None;
+            let snapshot = self.editor.circuit().clone();
+            let sources = snapshot
+                .modules
+                .iter()
+                .filter_map(|m| {
+                    m.verilog
+                        .as_ref()
+                        .map(|source| (m.name.clone(), source.clone()))
+                })
+                .collect::<Vec<_>>();
+            let (sender, receiver) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = sender.send(rgate_hdl::check_sources(&sources));
+            });
+            self.lint_result = Some((snapshot, receiver));
+        }
     }
 }

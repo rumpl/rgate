@@ -205,7 +205,7 @@ pub fn entries(menu: &str) -> Vec<MenuEntry> {
             E::item("New module…", "", C::NewModule),
             E::item("New Verilog module…", "", C::NewVerilog),
             E::item("Edit Verilog source…", "", C::EditVerilog),
-            E::item("Verilog interface…", "", C::VerilogInterface),
+            E::item("Verilog ports…", "", C::VerilogInterface),
             E::item("Set selected HDL input…", "", C::SetHdlInput),
             E::item("Edit module symbol…", "", C::EditSymbol),
             E::item("Module properties", "", C::Properties),
@@ -217,6 +217,9 @@ pub fn entries(menu: &str) -> Vec<MenuEntry> {
             E::item("Delete", "⌫", C::Delete),
         ],
         "Components" => [
+            ("Input port", "", GateKind::InputPort),
+            ("Output port", "", GateKind::OutputPort),
+            ("InOut port", "", GateKind::InoutPort),
             ("AND", "A", GateKind::And),
             ("NAND", "", GateKind::Nand),
             ("OR", "O", GateKind::Or),

@@ -3,24 +3,25 @@
 [Documentation home](../README.md) ·
 [Using the interface](../guides/interface.md)
 
-All **47 built-in palette entries** are documented below. Module instances are
+All **50 built-in palette entries** are documented below. Module instances are
 additional user-defined components, including
 [Verilog modules](../guides/verilog-modules.md).
 
 ## Catalog
 
-| Category                                          | Components                                                                                             |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| [Logic](logic.md)                                 | AND, NAND, OR, NOR, XOR, XNOR, Buffer, NOT, Tri-state buffer; Reduction AND, NAND, OR, NOR, XOR, XNOR  |
-| [Inputs and displays](inputs-and-displays.md)     | Switch, DIP switch, Clock, Ground, Vdd, LED (five display modes), GPIO peripheral                      |
-| [Sequential and memory](sequential-and-memory.md) | Register, D flip-flop, JK flip-flop, RAM, ROM                                                          |
-| [Routing and buses](routing.md)                   | Multiplexer, Decoder, Demultiplexer, Splitter, Concatenation, Tap                                      |
-| [Arithmetic](arithmetic.md)                       | Adder, Multiplier, Divider, Shift left, Shift right, Arithmetic shift right, Rotate left, Rotate right |
-| [Transistors](transistors.md)                     | NMOS, PMOS                                                                                             |
-| [VGA display](vga.md)                             | VGA display, digital RGB444 visual sink                                                                |
-| [TTY](tty.md)                                     | Terminal with byte-strobe or TkGate-style handshake mode                                               |
-| [Annotations](annotations.md)                     | Comment, Frame                                                                                         |
-| [Modules](../guides/modules.md)                   | User-defined instances, ports, and symbols                                                             |
+| Category                                                   | Components                                                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [Logic](logic.md)                                          | AND, NAND, OR, NOR, XOR, XNOR, Buffer, NOT, Tri-state buffer; Reduction AND, NAND, OR, NOR, XOR, XNOR  |
+| [Inputs and displays](inputs-and-displays.md)              | Switch, DIP switch, Clock, Ground, Vdd, LED (five display modes), GPIO peripheral                      |
+| [Sequential and memory](sequential-and-memory.md)          | Register, D flip-flop, JK flip-flop, RAM, ROM                                                          |
+| [Routing and buses](routing.md)                            | Multiplexer, Decoder, Demultiplexer, Splitter, Concatenation, Tap                                      |
+| [Arithmetic](arithmetic.md)                                | Adder, Multiplier, Divider, Shift left, Shift right, Arithmetic shift right, Rotate left, Rotate right |
+| [Transistors](transistors.md)                              | NMOS, PMOS                                                                                             |
+| [VGA display](vga.md)                                      | VGA display, digital RGB444 visual sink                                                                |
+| [TTY](tty.md)                                              | Terminal with byte-strobe or TkGate-style handshake mode                                               |
+| [Annotations](annotations.md)                              | Comment, Frame                                                                                         |
+| [Module ports](../guides/modules.md#place-schematic-ports) | Input port, Output port, InOut port                                                                    |
+| [Modules](../guides/modules.md)                            | User-defined instances, ports, and symbols                                                             |
 
 Symbol images are cropped screenshots of actual Classic-theme rendering. They
 show unwired defaults and LED display modes. Port labels and size can change

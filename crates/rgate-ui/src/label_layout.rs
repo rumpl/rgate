@@ -37,6 +37,48 @@ pub fn value_label(gate: &Gate) -> Point {
     Point::new(gate.bounds().min.x + 4.0, gate.bounds().max.y + 3.0)
 }
 
+fn segment_intersects_label(a: Point, b: Point, rect: Rect) -> bool {
+    if (a.y - b.y).abs() < 0.5 {
+        a.y >= rect.min.y
+            && a.y <= rect.max.y
+            && a.x.min(b.x) <= rect.max.x
+            && a.x.max(b.x) >= rect.min.x
+    } else if (a.x - b.x).abs() < 0.5 {
+        a.x >= rect.min.x
+            && a.x <= rect.max.x
+            && a.y.min(b.y) <= rect.max.y
+            && a.y.max(b.y) >= rect.min.y
+    } else {
+        // Imported diagonal segments: clipping against the label rectangle.
+        let delta = b - a;
+        let mut low = 0.0f32;
+        let mut high = 1.0f32;
+        for (p, q) in [
+            (-delta.x, a.x - rect.min.x),
+            (delta.x, rect.max.x - a.x),
+            (-delta.y, a.y - rect.min.y),
+            (delta.y, rect.max.y - a.y),
+        ] {
+            if p == 0.0 {
+                if q < 0.0 {
+                    return false;
+                }
+            } else {
+                let t = q / p;
+                if p < 0.0 {
+                    low = low.max(t);
+                } else {
+                    high = high.min(t);
+                }
+                if low > high {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
 pub fn wire_label(module: &Module, wire: &Wire, label: &str, occupied: &[Rect]) -> Option<Point> {
     let mut segments = wire
         .points
@@ -55,9 +97,13 @@ pub fn wire_label(module: &Module, wire: &Wire, label: &str, occupied: &[Rect]) 
             left + 5.0,
             right - width - 5.0,
         ] {
-            for offset in [-15.0, 4.0, -28.0, 17.0] {
+            for offset in [-18.0, 4.0, -28.0, 17.0] {
                 let origin = Point::new(x, segment[0].y + offset);
                 let rect = label_rect(origin, label, 10.0).expanded(2.0);
+                let association = Rect::from_points(
+                    Point::new(rect.min.x, rect.min.y.min(segment[0].y)),
+                    Point::new(rect.max.x, rect.max.y.max(segment[0].y)),
+                );
                 let blocked = module
                     .gates
                     .iter()
@@ -81,7 +127,23 @@ pub fn wire_label(module: &Module, wire: &Wire, label: &str, occupied: &[Rect]) 
                                     label_rect(value_label(gate), "0xFFFFFFFFFFFFFFFF", 8.0),
                                 ))
                     })
-                    || occupied.iter().any(|other| intersects(rect, *other));
+                    || occupied.iter().any(|other| intersects(rect, *other))
+                    || module
+                        .wires
+                        .iter()
+                        .filter(|other| other.net != wire.net)
+                        .any(|other| {
+                            other.points.windows(2).any(|points| {
+                                segment_intersects_label(points[0], points[1], association)
+                            })
+                        })
+                    || module.wires.iter().any(|other| {
+                        other
+                            .points
+                            .windows(2)
+                            .any(|points| segment_intersects_label(points[0], points[1], rect))
+                    });
+
                 if !blocked {
                     return Some(origin);
                 }
@@ -130,5 +192,69 @@ mod tests {
                 ));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod wire_clearance_tests {
+    use super::*;
+    use rgate_core::{Net, NetId, WireId};
+    #[test]
+    fn close_parallel_wires_leave_labels_clear_of_every_segment() {
+        let mut module = Module::new("main");
+        for (index, y) in [0.0, 12.0, 24.0].into_iter().enumerate() {
+            let net = NetId(index as u64 + 1);
+            module
+                .nets
+                .push(Net::new(net, ["reset", "enable", "reverse"][index], 1));
+            module.wires.push(Wire {
+                id: WireId(index as u64 + 1),
+                net,
+                start: None,
+                end: None,
+                points: vec![Point::new(0.0, y), Point::new(180.0, y)],
+            });
+        }
+        let mut occupied = Vec::new();
+        for wire in &module.wires {
+            let name = &module.net(wire.net).unwrap().name;
+            let Some(origin) = wire_label(&module, wire, name, &occupied) else {
+                continue;
+            };
+            let rect = label_rect(origin, name, 10.0).expanded(2.0);
+            assert!(module.wires.iter().all(|other| {
+                other
+                    .points
+                    .windows(2)
+                    .all(|p| !segment_intersects_label(p[0], p[1], rect))
+            }));
+            occupied.push(rect);
+        }
+    }
+}
+
+#[cfg(test)]
+mod association_tests {
+    use super::*;
+    use rgate_core::{NetId, WireId};
+    #[test]
+    fn label_cannot_jump_over_neighboring_wire() {
+        let mut module = Module::new("main");
+        for (index, y) in [0.0, 12.0, 24.0].into_iter().enumerate() {
+            module.wires.push(Wire {
+                id: WireId(index as u64),
+                net: NetId(index as u64),
+                start: None,
+                end: None,
+                points: vec![Point::new(0.0, y), Point::new(200.0, y)],
+            });
+        }
+        // There is no room for a full-size label between these parallel signals.
+        // Omitting it is preferable to putting "enable" beside another signal.
+        assert!(wire_label(&module, &module.wires[1], "enable", &[]).is_none());
+        let above = wire_label(&module, &module.wires[0], "reset", &[]).unwrap();
+        assert!(above.y < 0.0);
+        let below = wire_label(&module, &module.wires[2], "reverse", &[]).unwrap();
+        assert!(below.y > 24.0);
     }
 }

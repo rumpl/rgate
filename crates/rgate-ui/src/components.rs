@@ -19,7 +19,10 @@ const GROUPS: &[&str] = &[
 
 fn group(kind: &GateKind) -> &'static str {
     match kind {
-        GateKind::Switch
+        GateKind::InputPort
+        | GateKind::OutputPort
+        | GateKind::InoutPort
+        | GateKind::Switch
         | GateKind::Dip
         | GateKind::Led
         | GateKind::Clock
@@ -233,15 +236,7 @@ impl GateApp {
                     .border_b_1()
                     .border_color(rgb(palette.shadow))
                     .font_weight(FontWeight::BOLD)
-                    .child("Components")
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .font_weight(FontWeight::NORMAL)
-                            .text_color(rgb(palette.muted))
-                            .child(format!("{result_count} matches")),
-                    ),
+                    .child("Components"),
             )
             .child(
                 div().flex_none().p(px(6.0)).h(px(40.0)).w_full().child(

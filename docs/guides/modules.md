@@ -80,3 +80,14 @@ when a definition has one live instance.
 Probe child ports to follow signals across a module boundary. Probe internal
 nets to inspect the selected instance. Waveform names include the instance path.
 Pause to inspect values and Stop before editing a shared definition.
+
+## Place schematic ports
+
+Search Components for **Input port**, **Output port**, or **InOut port** and
+place a marker on the child schematic. Each marker creates its own named port.
+Double-click it to set the name and width, then wire its pin to the circuit.
+
+For a reusable AND block, place inputs named `A` and `B` and an output named
+`Y`. Wire A/B to the AND inputs and its output to Y. Instances of the module
+then expose those three pins. Input receives a signal from the parent, Output
+sends a signal to it, and InOut exposes a shared bidirectional bus.

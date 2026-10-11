@@ -209,23 +209,29 @@ impl Editor {
                 .filter(|gate| {
                     ids.contains(&gate.id)
                         && gate.pins.iter().any(|pin| {
-                            pin.net == Some(net.id) && pin.direction == Direction::Output
+                            pin.net == Some(net.id)
+                                && (gate.kind == GateKind::InputPort
+                                    || (gate.kind.port_direction().is_none()
+                                        && pin.direction == Direction::Output))
                         })
                 })
                 .map(|gate| gate.id)
                 .collect::<Vec<_>>();
-            let sinks =
-                self.module()
-                    .gates
-                    .iter()
-                    .filter(|gate| {
-                        ids.contains(&gate.id)
-                            && gate.pins.iter().any(|pin| {
-                                pin.net == Some(net.id) && pin.direction == Direction::Input
-                            })
-                    })
-                    .map(|gate| gate.id)
-                    .collect::<Vec<_>>();
+            let sinks = self
+                .module()
+                .gates
+                .iter()
+                .filter(|gate| {
+                    ids.contains(&gate.id)
+                        && gate.pins.iter().any(|pin| {
+                            pin.net == Some(net.id)
+                                && (gate.kind == GateKind::OutputPort
+                                    || (gate.kind.port_direction().is_none()
+                                        && pin.direction == Direction::Input))
+                        })
+                })
+                .map(|gate| gate.id)
+                .collect::<Vec<_>>();
             for driver in drivers {
                 for sink in &sinks {
                     if driver != *sink {
@@ -304,7 +310,33 @@ impl Editor {
                         if adjacent.is_empty() {
                             order[id]
                         } else {
-                            adjacent.iter().map(|id| order[id]).sum::<f32>() / adjacent.len() as f32
+                            let connected = self
+                                .module()
+                                .wires
+                                .iter()
+                                .filter_map(|wire| {
+                                    let (start, end) = (wire.start.as_ref()?, wire.end.as_ref()?);
+                                    let neighbor = if start.gate == *id {
+                                        end
+                                    } else if end.gate == *id {
+                                        start
+                                    } else {
+                                        return None;
+                                    };
+                                    let gate = self.module().gate(neighbor.gate)?;
+                                    let pin = gate.pin(&neighbor.pin)?;
+                                    let height = gate.bounds().size().y.max(1.0);
+                                    order
+                                        .get(&neighbor.gate)
+                                        .map(|rank| *rank + pin.offset.y / height)
+                                })
+                                .collect::<Vec<_>>();
+                            if connected.is_empty() {
+                                adjacent.iter().map(|id| order[id]).sum::<f32>()
+                                    / adjacent.len() as f32
+                            } else {
+                                connected.iter().sum::<f32>() / connected.len() as f32
+                            }
                         }
                     };
                     score(a).total_cmp(&score(b)).then(a.cmp(b))
@@ -320,6 +352,15 @@ impl Editor {
             .reduce(|a, b| a.union(b))
             .unwrap()
             .min;
+        const ROW_GAP: f32 = 42.0;
+        let height = |layer: &Vec<GateId>| {
+            layer
+                .iter()
+                .map(|id| self.module().gate(*id).unwrap().bounds().size().y)
+                .sum::<f32>()
+                + ROW_GAP * layer.len().saturating_sub(1) as f32
+        };
+        let tallest = layers.values().map(&height).fold(0.0, f32::max);
         let mut x = origin.x;
         let mut positions = HashMap::new();
         for layer in layers.values() {
@@ -327,7 +368,7 @@ impl Editor {
                 .iter()
                 .map(|id| self.module().gate(*id).unwrap().bounds().size().x)
                 .fold(0.0, f32::max);
-            let mut y = origin.y;
+            let mut y = origin.y + (tallest - height(layer)) / 2.0;
             for id in layer {
                 let gate = self.module().gate(*id).unwrap();
                 let size = gate.bounds().size();
@@ -336,11 +377,31 @@ impl Editor {
                     *id,
                     self.snapped(gate.position + center - gate.bounds().center()),
                 );
-                y += size.y + 85.0;
+                y += size.y + ROW_GAP;
             }
-            x += width + 150.0;
+            x += width + 90.0;
         }
-        self.apply_positions(positions)
+        let mut arranged = self.module().clone();
+        let old = endpoint_positions(&arranged, &ids);
+        for gate in &mut arranged.gates {
+            if let Some(position) = positions.get(&gate.id) {
+                gate.position = *position;
+            }
+        }
+        update_wire_endpoints(&mut arranged, &old, &ids);
+        let wires = arranged
+            .wires
+            .iter()
+            .filter(|wire| {
+                wire.start.as_ref().is_some_and(|p| ids.contains(&p.gate))
+                    || wire.end.as_ref().is_some_and(|p| ids.contains(&p.gate))
+            })
+            .map(|w| w.id)
+            .collect::<BTreeSet<_>>();
+        if !wires.is_empty() {
+            crate::routing::route_selected(&mut arranged, &wires).map_err(EditError::Invalid)?;
+        }
+        self.edit_module(|module| *module = arranged)
     }
 }
 
@@ -441,5 +502,90 @@ mod tests {
         }
         editor.undo();
         assert_eq!(editor.circuit(), &before);
+    }
+}
+
+#[cfg(test)]
+mod tidy_regression_tests {
+    use super::*;
+    #[test]
+    fn led_chaser_layout_centers_layers_and_removes_wire_detours() {
+        let document: serde_json::Value =
+            serde_json::from_str(include_str!("../../../examples/verilog-led-chaser.rgate"))
+                .unwrap();
+        let circuit: Circuit = serde_json::from_value(document["circuit"].clone()).unwrap();
+        let mut editor = Editor::new(circuit).unwrap();
+        let before = editor.circuit().clone();
+        editor.tidy_layout().unwrap();
+        let module = editor.module();
+        let chaser = module.gates.iter().find(|g| g.name == "chaser").unwrap();
+        let inputs = module
+            .gates
+            .iter()
+            .filter(|g| matches!(g.kind, GateKind::Switch | GateKind::Dip | GateKind::Clock))
+            .map(|g| g.bounds())
+            .reduce(|a, b| a.union(b))
+            .unwrap();
+        assert!((chaser.bounds().center().y - inputs.center().y).abs() < 10.0);
+        assert_eq!(
+            crate::routing::crossing_count(module),
+            0,
+            "tidy must separate the chaser input channels"
+        );
+        for wire in &module.wires {
+            let start = module.pin_position(wire.start.as_ref().unwrap()).unwrap();
+            let end = module.pin_position(wire.end.as_ref().unwrap()).unwrap();
+            assert_eq!(wire.points[0], start);
+            assert_eq!(*wire.points.last().unwrap(), end);
+            let length = wire
+                .points
+                .windows(2)
+                .map(|p| (p[1].x - p[0].x).abs() + (p[1].y - p[0].y).abs())
+                .sum::<f32>();
+            let direct = (start.x - end.x).abs() + (start.y - end.y).abs();
+            assert!(
+                length <= direct + 120.0,
+                "{}: length {length}, direct {direct}",
+                wire.id.0
+            );
+        }
+        editor.undo();
+        assert_eq!(editor.circuit(), &before);
+    }
+}
+
+#[cfg(test)]
+mod port_layout_tests {
+    use super::*;
+    use crate::Hit;
+    use rgate_core::PinRef;
+    #[test]
+    fn input_ports_logic_and_output_are_separate_layers() {
+        let mut editor = Editor::new(Circuit::default()).unwrap();
+        let and = editor
+            .place(GateKind::And, Point::new(100.0, 100.0))
+            .unwrap();
+        let a = editor
+            .place(GateKind::InputPort, Point::new(10.0, 50.0))
+            .unwrap();
+        let b = editor
+            .place(GateKind::InputPort, Point::new(10.0, 150.0))
+            .unwrap();
+        let y = editor
+            .place(GateKind::OutputPort, Point::new(220.0, 100.0))
+            .unwrap();
+        for (marker, pin) in [(a, "I0"), (b, "I1"), (y, "Z")] {
+            editor.start_wire(Hit::Pin(PinRef::new(and, pin))).unwrap();
+            editor
+                .finish_wire(Hit::Pin(PinRef::new(marker, "P")))
+                .unwrap();
+        }
+        editor.selection.clear();
+        editor.tidy_layout().unwrap();
+        let module = editor.module();
+        assert!(module.gate(a).unwrap().bounds().max.x < module.gate(and).unwrap().bounds().min.x);
+        assert!(module.gate(b).unwrap().bounds().max.x < module.gate(and).unwrap().bounds().min.x);
+        assert!(module.gate(y).unwrap().bounds().min.x > module.gate(and).unwrap().bounds().max.x);
+        assert_eq!(crate::routing::crossing_count(module), 0);
     }
 }

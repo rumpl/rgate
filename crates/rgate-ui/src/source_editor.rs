@@ -107,8 +107,13 @@ impl GateApp {
                     && this.simulation.is_none()
                     && this.editor.active_module() == name
                 {
-                    this.hdl_diagnostics.clear();
                     let source = input.read(cx).value().to_string();
+                    this.hdl_diagnostics.clear();
+                    #[cfg(feature = "icarus")]
+                    {
+                        this.lint_due =
+                            Some(std::time::Instant::now() + std::time::Duration::from_millis(350));
+                    }
                     if let Err(error) = this
                         .editor
                         .edit_module(|module| module.verilog = Some(source))
@@ -168,21 +173,6 @@ impl GateApp {
             }
         });
         let palette = self.theme.palette();
-        let mut errors = div().flex().flex_col();
-        for (index, diagnostic) in diagnostics.into_iter().enumerate() {
-            errors = errors.child(
-                div()
-                    .id(("source-diagnostic", index))
-                    .px(px(8.0))
-                    .text_color(rgb(palette.error))
-                    .cursor_pointer()
-                    .child(format!("Line {}: {}", diagnostic.line, diagnostic.message))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.diagnostic_line = Some(diagnostic.line);
-                        cx.notify();
-                    })),
-            );
-        }
 
         div()
             .id("verilog-edit-tab")
@@ -199,28 +189,29 @@ impl GateApp {
                     .gap(px(12.0))
                     .p(px(8.0))
                     .bg(rgb(palette.chrome))
-                    .child(format!(
-                        "{}.sv · Verilog/SystemVerilog",
-                        self.editor.active_module()
-                    ))
+                    .child(format!("{}.sv", self.editor.active_module()))
                     .child(
                         div()
                             .id("verilog-interface-button")
                             .cursor_pointer()
-                            .child("Interface…")
+                            .child("Ports…")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.command(Command::VerilogInterface, window, cx)
                             })),
-                    )
-                    .child("Changes saved to document"),
+                    ),
             )
-            .child(errors)
             .child(
-                div().flex_1().min_h_0().min_w_0().child(
-                    Editor::new(&input)
-                        .h(gpui::relative(1.0))
-                        .readonly(self.simulation.is_some()),
-                ),
+                div()
+                    .id("source-editor-content")
+                    .debug_selector(|| "source-editor-content".into())
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .child(
+                        Editor::new(&input)
+                            .h(gpui::relative(1.0))
+                            .readonly(self.simulation.is_some()),
+                    ),
             )
             .into_any_element()
     }

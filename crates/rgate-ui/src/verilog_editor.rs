@@ -25,7 +25,8 @@ impl GateApp {
             .map(|(name, source, nets)| {
                 Ok((
                     name.clone(),
-                    rgate_format::hdl::inferred_nets(&source, &name, &nets)?,
+                    rgate_format::hdl::inferred_nets(&source, &name, &nets)
+                        .map_err(|error| anyhow::anyhow!("{name}.sv:1: {error:#}"))?,
                 ))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -62,6 +63,15 @@ impl GateApp {
         }
         if !creating && self.editor.module().verilog.is_none() {
             self.log("This is a schematic module. Choose New Verilog module instead.".into());
+            return;
+        }
+        #[cfg(not(target_family = "wasm"))]
+        if !creating {
+            self.dialog = Some(Dialog::VerilogPorts {
+                module: name,
+                error: None,
+            });
+            cx.notify();
             return;
         }
         let source = if creating {

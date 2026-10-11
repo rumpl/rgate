@@ -83,6 +83,9 @@ pub enum GateKind {
     Pmos,
     Tty,
     Peripheral,
+    InputPort,
+    OutputPort,
+    InoutPort,
     Vga,
     Comment,
     Module(String),
@@ -137,9 +140,21 @@ impl GateKind {
             Self::Pmos => "PMOS",
             Self::Tty => "TTY",
             Self::Peripheral => "GPIO",
+            Self::InputPort => "Input port",
+            Self::OutputPort => "Output port",
+            Self::InoutPort => "InOut port",
             Self::Vga => "VGA DISPLAY",
             Self::Comment => "COMMENT",
             Self::Module(name) | Self::Unsupported(name) => name,
+        }
+    }
+
+    pub fn port_direction(&self) -> Option<Direction> {
+        match self {
+            Self::InputPort => Some(Direction::Input),
+            Self::OutputPort => Some(Direction::Output),
+            Self::InoutPort => Some(Direction::InOut),
+            _ => None,
         }
     }
 
@@ -237,6 +252,27 @@ impl Gate {
         gate
     }
 
+    /// Visible rectangular module body; electrical pins stay at the outer lead ends.
+    pub fn module_body_bounds(&self) -> Rect {
+        let mut local = self.clone();
+        local.position = Point::ZERO;
+        local.rotation = 0;
+        let mut bounds = local.bounds();
+        bounds.min.x += 6.0;
+        bounds.max.x -= 6.0;
+        [
+            bounds.min,
+            Point::new(bounds.max.x, bounds.min.y),
+            bounds.max,
+            Point::new(bounds.min.x, bounds.max.y),
+        ]
+        .into_iter()
+        .map(|point| self.position + point.rotated(self.rotation))
+        .map(|point| Rect::from_points(point, point))
+        .reduce(Rect::union)
+        .unwrap()
+    }
+
     pub fn reset_pins(&mut self) {
         use Direction::{Input, Output};
         let pin = |name: &str, direction, x, y| Pin::new(name, direction, Point::new(x, y));
@@ -260,6 +296,8 @@ impl Gate {
                 pins.push(output);
                 pins
             }
+            GateKind::InputPort => vec![pin("P", Input, 18.0, 0.0)],
+            GateKind::OutputPort | GateKind::InoutPort => vec![pin("P", Input, -18.0, 0.0)],
             GateKind::Buffer | GateKind::Not => {
                 vec![pin("I", Input, -6.0, 0.0), pin("Z", Output, 10.0, 0.0)]
             }
@@ -416,6 +454,7 @@ impl Gate {
             };
         }
         let (width, height) = match &self.kind {
+            GateKind::InputPort | GateKind::OutputPort | GateKind::InoutPort => (36.0, 18.0),
             GateKind::Switch => (34.0, 26.0),
             GateKind::Dip => (76.0, 22.0),
             GateKind::Led => {
@@ -441,7 +480,15 @@ impl Gate {
                 self.text.lines().count().max(1) as f32 * 15.0,
             ),
             GateKind::Module(_) => (
-                self.config.module_width,
+                if self.config.custom_ports.is_empty() {
+                    self.pins
+                        .iter()
+                        .map(|pin| pin.offset.x.abs() * 2.0)
+                        .reduce(f32::max)
+                        .unwrap_or(self.config.module_width)
+                } else {
+                    self.config.module_width
+                },
                 self.pins
                     .iter()
                     .map(|pin| pin.offset.y.abs() * 2.0 + 24.0)

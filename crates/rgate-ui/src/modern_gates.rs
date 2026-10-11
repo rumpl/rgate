@@ -27,6 +27,42 @@ pub fn symbol(gate: &Gate) -> Symbol {
     let mut pin_labels = Vec::new();
     let line = Shape::polyline;
     match gate.kind {
+        GateKind::InputPort | GateKind::OutputPort | GateKind::InoutPort => {
+            let points = if gate.kind == GateKind::InputPort {
+                vec![
+                    (-14.0, -7.0),
+                    (6.0, -7.0),
+                    (14.0, 0.0),
+                    (6.0, 7.0),
+                    (-14.0, 7.0),
+                ]
+            } else if gate.kind == GateKind::OutputPort {
+                vec![
+                    (14.0, -7.0),
+                    (-6.0, -7.0),
+                    (-14.0, 0.0),
+                    (-6.0, 7.0),
+                    (14.0, 7.0),
+                ]
+            } else {
+                vec![
+                    (-14.0, 0.0),
+                    (-6.0, -7.0),
+                    (6.0, -7.0),
+                    (14.0, 0.0),
+                    (6.0, 7.0),
+                    (-6.0, 7.0),
+                ]
+            };
+            let mut body = line(&points);
+            body.close();
+            bodies.push(body);
+            let pin = &gate.pins[0];
+            details.push(line(&[
+                (pin.offset.x, pin.offset.y),
+                (pin.offset.x.signum() * 14.0, 0.0),
+            ]));
+        }
         GateKind::And | GateKind::Nand | GateKind::ReduceAnd | GateKind::ReduceNand => {
             let h = (f32::from(gate.input_count) * 2.5 + 1.0).max(7.0);
             let mut body = Shape::default();
@@ -124,8 +160,9 @@ pub fn symbol(gate: &Gate) -> Symbol {
             let mut unrotated = gate.clone();
             unrotated.rotation = 0;
             let half = unrotated.bounds().size() / 2.0;
-            let w = (half.x - 4.).max(6.);
-            let h = (half.y - 4.).max(5.);
+            let module = matches!(gate.kind, GateKind::Module(_));
+            let w = (half.x - if module { 6.0 } else { 4.0 }).max(6.);
+            let h = (half.y - if module { 0.0 } else { 4.0 }).max(5.);
             if matches!(gate.kind, GateKind::Mux | GateKind::Add) {
                 let mut body = line(&[(-w, -h), (w, -h), (w * 0.6, h), (-w * 0.6, h)]);
                 body.close();

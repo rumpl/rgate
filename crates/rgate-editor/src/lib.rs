@@ -2,8 +2,8 @@ mod organization;
 mod routing;
 pub use organization::{Align, Distribute, SearchResult, SearchTarget, search};
 use rgate_core::{
-    Circuit, Gate, GateId, GateKind, Module, Net, NetId, PinRef, Point, Rect, Signal, Wire, WireId,
-    route_to, segment_distance,
+    Circuit, Direction, Gate, GateId, GateKind, Module, Net, NetId, PinRef, Point, Rect, Signal,
+    Wire, WireId, route_to, segment_distance,
 };
 use std::collections::{BTreeSet, HashMap};
 use thiserror::Error;
@@ -351,6 +351,19 @@ impl Editor {
                 module.gates.iter().map(|gate| gate.name.as_str()),
                 &gate.name,
             );
+            if let Some(direction) = gate.kind.port_direction() {
+                let base = match direction {
+                    Direction::Input => "A",
+                    Direction::Output => "Y",
+                    Direction::InOut => "DATA",
+                };
+                let name = unique_name(module.nets.iter().map(|n| n.name.as_str()), base);
+                gate.name = unique_name(module.gates.iter().map(|g| g.name.as_str()), &name);
+                let mut net = Net::new(module.next_net_id(), &gate.name, gate.width);
+                net.port = Some(direction);
+                gate.pin_mut("P").unwrap().net = Some(net.id);
+                module.nets.push(net);
+            }
             if gate.kind == GateKind::Comment {
                 gate.text = "Comment — double-click to edit".into();
             }
@@ -364,6 +377,27 @@ impl Editor {
         self.finish_gesture();
         let before = self.circuit.clone();
         edit(self.circuit.module_mut(&self.active).unwrap());
+        {
+            let module = self.circuit.module_mut(&self.active).unwrap();
+            for gate in &mut module.gates {
+                if let Some(direction) = gate.kind.port_direction()
+                    && let Some(id) = gate.pin("P").and_then(|p| p.net)
+                    && let Some(net) = module.nets.iter_mut().find(|n| n.id == id)
+                {
+                    let old_gate = before.module(&self.active).and_then(|m| m.gate(gate.id));
+                    let old_net = before.module(&self.active).and_then(|m| m.net(id));
+                    if old_gate.is_some_and(|old| old.name == gate.name)
+                        && old_net.is_some_and(|old| old.name != net.name)
+                    {
+                        gate.name = net.name.clone();
+                    } else {
+                        net.name = gate.name.clone();
+                    }
+                    net.width = gate.width;
+                    net.port = Some(direction);
+                }
+            }
+        }
         if let Err(error) = self.sync_instances() {
             self.circuit = before;
             return Err(error);
@@ -861,8 +895,21 @@ impl Editor {
         if draft.start.is_some() && draft.start == target {
             return Err(EditError::NoConnection);
         }
-        let net = draft
-            .net
+        if let (Some(a), Some(b)) = (draft.net, target_net)
+            && a != b
+            && self.module().net(a).unwrap().port.is_some()
+            && self.module().net(b).unwrap().port.is_some()
+        {
+            return Err(EditError::Invalid(
+                "Two different module ports must remain separate nets".into(),
+            ));
+        }
+        let port_net = [draft.net, target_net]
+            .into_iter()
+            .flatten()
+            .find(|id| self.module().net(*id).is_some_and(|n| n.port.is_some()));
+        let net = port_net
+            .or(draft.net)
             .or(target_net)
             .unwrap_or_else(|| self.module().next_net_id());
         let mut points = draft.points;
@@ -1525,5 +1572,105 @@ mod tests {
         );
         assert_eq!(editor.selected_wires, BTreeSet::from([WireId(1)]));
         assert!(editor.selection.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod port_marker_tests {
+    use super::*;
+    #[test]
+    fn port_markers_create_named_nets_and_instance_pins_without_sources() {
+        let mut editor = Editor::new(Circuit::default()).unwrap();
+        editor.create_module("and_block".into()).unwrap();
+        let and = editor
+            .place(GateKind::And, Point::new(100.0, 100.0))
+            .unwrap();
+        let a = editor
+            .place(GateKind::InputPort, Point::new(10.0, 70.0))
+            .unwrap();
+        let b = editor
+            .place(GateKind::InputPort, Point::new(10.0, 130.0))
+            .unwrap();
+        let y = editor
+            .place(GateKind::OutputPort, Point::new(200.0, 100.0))
+            .unwrap();
+        editor
+            .edit_module(|m| {
+                m.gate_mut(a).unwrap().name = "A".into();
+                m.gate_mut(b).unwrap().name = "B".into();
+                m.gate_mut(y).unwrap().name = "Y".into();
+            })
+            .unwrap();
+        for (marker, pin) in [(a, "I0"), (b, "I1"), (y, "Z")] {
+            editor.start_wire(Hit::Pin(PinRef::new(and, pin))).unwrap();
+            editor
+                .finish_wire(Hit::Pin(PinRef::new(marker, "P")))
+                .unwrap();
+        }
+        let nets = &editor.module().nets;
+        assert_eq!(nets.len(), 3);
+        assert!(nets.iter().all(|n| n.port.is_some()));
+        let instance = editor
+            .circuit()
+            .module_instance("and_block", GateId(99), Point::ZERO)
+            .unwrap();
+        assert_eq!(instance.pins.len(), 3);
+        assert_eq!(instance.pin("A").unwrap().direction, Direction::Input);
+        assert_eq!(instance.pin("Y").unwrap().direction, Direction::Output);
+        assert!(!editor.module().gate(a).unwrap().kind.is_source());
+        editor.circuit().validate().unwrap();
+    }
+    #[test]
+    fn inout_marker_width_and_name_are_undoable() {
+        let mut editor = Editor::new(Circuit::default()).unwrap();
+        let id = editor.place(GateKind::InoutPort, Point::ZERO).unwrap();
+        let before = editor.circuit().clone();
+        editor
+            .edit_module(|m| {
+                let g = m.gate_mut(id).unwrap();
+                g.name = "DATA".into();
+                g.width = 8;
+                g.initial = Signal::from_u64(0, 8);
+                g.reset_pins();
+                g.pin_mut("P").unwrap().net = Some(NetId(1));
+            })
+            .unwrap();
+        assert_eq!(editor.module().nets[0].name, "DATA");
+        assert_eq!(editor.module().nets[0].width, 8);
+        assert_eq!(editor.module().nets[0].port, Some(Direction::InOut));
+        editor.undo();
+        assert_eq!(editor.circuit(), &before);
+    }
+}
+
+#[cfg(test)]
+mod port_rename_tests {
+    use super::*;
+    #[test]
+    fn net_and_port_marker_can_be_renamed_from_either_properties() {
+        let mut editor = Editor::new(Circuit::default()).unwrap();
+        let marker = editor.place(GateKind::InputPort, Point::ZERO).unwrap();
+        let net = editor
+            .module()
+            .gate(marker)
+            .unwrap()
+            .pin("P")
+            .unwrap()
+            .net
+            .unwrap();
+        let before = editor.circuit().clone();
+        editor
+            .edit_module(|m| m.nets.iter_mut().find(|n| n.id == net).unwrap().name = "RESET".into())
+            .unwrap();
+        assert_eq!(editor.module().net(net).unwrap().name, "RESET");
+        assert_eq!(editor.module().gate(marker).unwrap().name, "RESET");
+        editor
+            .edit_module(|m| m.gate_mut(marker).unwrap().name = "RESET_N".into())
+            .unwrap();
+        assert_eq!(editor.module().net(net).unwrap().name, "RESET_N");
+        editor.undo();
+        assert_eq!(editor.module().net(net).unwrap().name, "RESET");
+        editor.undo();
+        assert_eq!(editor.circuit(), &before);
     }
 }

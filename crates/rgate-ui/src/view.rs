@@ -864,18 +864,6 @@ impl GateApp {
                     ),
             );
         }
-        if self.editor.module().verilog.is_some() {
-            bar = bar.child(
-                div()
-                    .id("edit-verilog-source")
-                    .px(px(8.0))
-                    .cursor_pointer()
-                    .child("Verilog source…")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.command(Command::EditVerilog, window, cx)
-                    })),
-            );
-        }
         if let Some(path) = &self.debug_path {
             if let Some((parent, _)) = path.rsplit_once('/') {
                 let parent = parent.to_owned();
@@ -916,6 +904,9 @@ impl GateApp {
         } else {
             "Edit mode"
         };
+        if !compiling && self.simulation.is_none() {
+            return bar.child(div().flex_1()).into_any_element();
+        }
         bar.child(div().flex_1())
             .child(
                 div()
@@ -1361,6 +1352,7 @@ impl GateApp {
         let (title, width) = match dialog {
             Dialog::HdlSignals { .. } => ("Live HDL signals", 700.0),
             Dialog::HdlTop { .. } => ("Choose top module", 440.0),
+            Dialog::VerilogPorts { .. } => ("Verilog module ports", 520.0),
             Dialog::Verilog { .. } => ("Verilog module source", 900.0),
             Dialog::HdlInput { .. } => ("Set HDL input (hex)", 400.0),
             Dialog::Symbol(_) => ("Module symbol editor", 640.0),
@@ -1397,6 +1389,83 @@ impl GateApp {
         let mut content = div().flex().flex_col().gap(px(10.0)).p(px(16.0));
         let mut apply = false;
         match dialog {
+            Dialog::VerilogPorts { module, error } => {
+                apply = true;
+                content=content.child(format!("{module} · ports defined in Verilog source"))
+                    .child("Use these pins to connect an instance in your parent schematic. Edit declarations in the source, then refresh to update instance pins.");
+                let mut ports = div()
+                    .id("verilog-ports-list")
+                    .max_h(px(240.0))
+                    .overflow_y_scroll();
+                match self
+                    .editor
+                    .circuit()
+                    .module(module)
+                    .and_then(|m| m.verilog.as_ref().map(|source| (source, &m.nets)))
+                {
+                    Some((source, nets)) => {
+                        match rgate_format::hdl::inferred_nets(source, module, nets) {
+                            Ok(nets) => {
+                                ports = ports.child(
+                                    div()
+                                        .flex()
+                                        .gap(px(12.0))
+                                        .child(div().w(px(90.0)).child("Direction"))
+                                        .child(div().flex_1().child("Pin"))
+                                        .child("Width"),
+                                );
+                                let mut count = 0;
+                                for net in nets.iter().filter(|n| n.port.is_some()) {
+                                    count += 1;
+                                    ports = ports.child(
+                                        div()
+                                            .flex()
+                                            .gap(px(12.0))
+                                            .py(px(4.0))
+                                            .child(div().w(px(90.0)).child(match net.port {
+                                                Some(Direction::Input) => "Input →",
+                                                Some(Direction::Output) => "Output ←",
+                                                _ => "InOut ↔",
+                                            }))
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .font_family("Menlo")
+                                                    .child(net.name.clone()),
+                                            )
+                                            .child(format!(
+                                                "{} bit{}",
+                                                net.width,
+                                                if net.width == 1 { "" } else { "s" }
+                                            )),
+                                    );
+                                }
+                                if count == 0 {
+                                    ports = ports.child("This module has no external ports.");
+                                }
+                            }
+                            Err(error) => {
+                                ports = ports.child(
+                                    div().text_color(rgb(self.theme.palette().error)).child(
+                                        format!("Correct the source declarations first: {error}"),
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    None => {
+                        ports = ports.child("Source module is unavailable.");
+                    }
+                }
+                content=content.child(ports).child("During simulation, use Simulate → Browse HDL signals… to inspect internal signals and add waveform probes.");
+                if let Some(error) = error {
+                    content = content.child(
+                        div()
+                            .text_color(rgb(self.theme.palette().error))
+                            .child(error.clone()),
+                    );
+                }
+            }
             Dialog::HdlSignals { query } => {
                 content=content.child(query.clone()).child("Click a signal to inspect its live value; Probe records its waveform. Filter by an instance path to explore that scope.");
                 let mut list = div()
@@ -2025,7 +2094,11 @@ impl GateApp {
                         .border_1()
                         .border_color(rgb(self.theme.palette().shadow))
                         .cursor_pointer()
-                        .child("Apply")
+                        .child(if matches!(dialog, Dialog::VerilogPorts { .. }) {
+                            "Refresh from source"
+                        } else {
+                            "Apply"
+                        })
                         .on_click(cx.listener(|this, _, window, cx| this.apply_dialog(window, cx))),
                 );
             }
@@ -2041,7 +2114,11 @@ impl GateApp {
                     .border_1()
                     .border_color(rgb(self.theme.palette().shadow))
                     .cursor_pointer()
-                    .child(if apply { "Cancel" } else { "Close" })
+                    .child(if apply && !matches!(dialog, Dialog::VerilogPorts { .. }) {
+                        "Cancel"
+                    } else {
+                        "Close"
+                    })
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.dismiss_dialog(window, cx);
                     })),

@@ -434,3 +434,38 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod port_geometry_tests {
+    use crate::{Circuit, Direction, GateId, Module, Net, NetId, Point};
+    #[test]
+    fn module_border_matches_electrical_pin_positions() {
+        let mut circuit = Circuit::default();
+        let mut child = Module::new("child");
+        for (id, name, direction) in [(1, "clk", Direction::Input), (2, "leds", Direction::Output)]
+        {
+            let mut net = Net::new(NetId(id), name, 1);
+            net.port = Some(direction);
+            child.nets.push(net);
+        }
+        circuit.modules.push(child);
+        let mut gate = circuit
+            .module_instance("child", GateId(1), Point::new(200.0, 100.0))
+            .unwrap();
+        for half_width in [45.0, 50.0, 80.0] {
+            for pin in &mut gate.pins {
+                pin.offset.x = if pin.direction == Direction::Output {
+                    half_width
+                } else {
+                    -half_width
+                };
+            }
+            let bounds = gate.bounds();
+            let body = gate.module_body_bounds();
+            assert_eq!(body.min.x - bounds.min.x, 6.0);
+            assert_eq!(bounds.max.x - body.max.x, 6.0);
+            assert_eq!(gate.pin_position(gate.pin("clk").unwrap()).x, bounds.min.x);
+            assert_eq!(gate.pin_position(gate.pin("leds").unwrap()).x, bounds.max.x);
+        }
+    }
+}

@@ -59,10 +59,11 @@ RGate reads input, output, and inout ports from the source, including packed bus
 widths and default parameter expressions. Click Apply to create the module. Edit
 source in the Edit tab; starting a run refreshes the inferred ports.
 
-Use **Interface…** to add an internal signal for inspection with a line such as
-`signal internal_state 8`. Port names and widths come from the source. Keep
-connected port widths consistent with the parent schematic; disconnect affected
-pins before changing widths.
+Open **Ports…** to see each pin’s direction and width. Edit port declarations in
+the source, then choose **Refresh from source** to update schematic instance
+pins. Keep connected widths consistent with the parent; disconnect affected pins
+before changing widths. Use **Simulate → Browse HDL signals…** to inspect
+internal signals and add probes during a run.
 
 ## Connect it to a schematic
 

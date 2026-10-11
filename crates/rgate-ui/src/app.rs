@@ -97,6 +97,11 @@ pub struct NetDialog {
 }
 
 pub enum Dialog {
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    VerilogPorts {
+        module: String,
+        error: Option<String>,
+    },
     HdlSignals {
         query: Entity<TextField>,
     },
@@ -153,7 +158,14 @@ pub enum Dialog {
 }
 
 pub struct GateApp {
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    #[cfg(feature = "icarus")]
+    pub lint_due: Option<std::time::Instant>,
+    #[cfg(feature = "icarus")]
+    pub lint_result: Option<(
+        Circuit,
+        std::sync::mpsc::Receiver<Result<(), rgate_sim::SimError>>,
+    )>,
+    #[cfg_attr(not(feature = "icarus"), allow(dead_code))]
     pub background_compilation: bool,
     #[cfg(feature = "icarus")]
     pub compilation: Option<crate::compilation::Compilation>,
@@ -230,6 +242,8 @@ impl GateApp {
         let mut this = Self {background_compilation:false,
             #[cfg(feature="icarus")]
             compilation:None,
+            #[cfg(feature="icarus")] lint_due:None,
+            #[cfg(feature="icarus")] lint_result:None,
             hdl_diagnostics:Vec::new(),diagnostic_line:None,
             #[cfg(not(target_family="wasm"))]
             source_editor:None,
@@ -254,7 +268,10 @@ impl GateApp {
                     .await;
                 let result = entity.update(cx, |this, cx| {
                     #[cfg(feature = "icarus")]
-                    this.poll_compilation(cx);
+                    {
+                        this.poll_compilation(cx);
+                        this.poll_source_check(cx);
+                    }
                     if this.running {
                         this.advance_running(cx);
                     }
@@ -329,6 +346,9 @@ impl GateApp {
     pub(crate) fn error(&mut self, error: impl std::fmt::Display) {
         let message = error.to_string();
         self.hdl_diagnostics = crate::hdl_diagnostics::parse(&message);
+        if !self.hdl_diagnostics.is_empty() {
+            self.bottom_scope = false;
+        }
         self.log(format!("Error: {message}"));
     }
 
@@ -649,16 +669,16 @@ impl GateApp {
                 }
                 Err(error) => self.error(error),
             },
-            Command::TidyLayout => {
-                match self.editor.tidy_layout() {
-                    Ok(()) => {
-                        self.changed();
-                        self.need_fit = true;
-                        self.log("Applied layered layout. Route wires separately; Undo restores placement.".into());
-                    }
-                    Err(error) => self.error(error),
+            Command::TidyLayout => match self.editor.tidy_layout() {
+                Ok(()) => {
+                    self.changed();
+                    self.need_fit = true;
+                    self.log(
+                        "Tidied component placement and wire routes; Undo restores both.".into(),
+                    );
                 }
-            }
+                Err(error) => self.error(error),
+            },
             Command::Properties => self.show_properties(window, cx),
             Command::LoadMemory => {
                 self.log("Open RAM/ROM properties to load a memory image.".into())
@@ -1554,6 +1574,18 @@ impl GateApp {
     }
 
     pub fn apply_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.dialog, Some(Dialog::VerilogPorts { .. })) {
+            match self.refresh_verilog_ports() {
+                Ok(()) => self.log("Module ports refreshed from source.".into()),
+                Err(error) => {
+                    if let Some(Dialog::VerilogPorts { error: slot, .. }) = &mut self.dialog {
+                        *slot = Some(error.to_string());
+                    }
+                }
+            }
+            cx.notify();
+            return;
+        }
         if let Some(Dialog::HdlTop {
             circuit,
             path,
@@ -1888,7 +1920,19 @@ impl GateApp {
                 } else {
                     gate.width
                 };
-                if gate.width != width && gate.pins.iter().any(|pin| pin.net.is_some()) {
+                let port_only = gate.kind.port_direction().is_some()
+                    && gate.pin("P").and_then(|p| p.net).is_some_and(|id| {
+                        self.editor
+                            .module()
+                            .gates
+                            .iter()
+                            .filter(|g| g.id != gate.id)
+                            .all(|g| g.pins.iter().all(|p| p.net != Some(id)))
+                    });
+                if gate.width != width
+                    && gate.pins.iter().any(|pin| pin.net.is_some())
+                    && !port_only
+                {
                     anyhow::bail!(
                         "Disconnect this gate before changing its bit width; existing nets retain their width."
                     );
@@ -2236,8 +2280,17 @@ impl GateApp {
             }
         }
         if event.button == gpui::MouseButton::Right {
-            if let Some(Hit::Gate(id) | Hit::Pin(rgate_core::PinRef { gate: id, .. })) = &hit {
-                self.editor.select(*id, false);
+            match &hit {
+                Some(Hit::Gate(id) | Hit::Pin(rgate_core::PinRef { gate: id, .. })) => {
+                    self.editor.select(*id, false)
+                }
+                Some(Hit::Wire { net, id, .. }) => {
+                    self.editor.selection.clear();
+                    self.editor.selected_wires.clear();
+                    self.editor.selected_wires.insert(*id);
+                    self.editor.selected_net = Some(*net);
+                }
+                _ => {}
             }
             self.popup = Some(Popup {
                 menu: "Canvas".into(),

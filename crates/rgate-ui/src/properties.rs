@@ -22,7 +22,8 @@ pub fn fields(kind: &GateKind) -> Fields {
             kind,
             GateKind::Switch | GateKind::Dip | GateKind::Peripheral
         ),
-        delay: !annotation
+        delay: kind.port_direction().is_none()
+            && !annotation
             && !block
             && !matches!(
                 kind,

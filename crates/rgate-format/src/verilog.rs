@@ -93,7 +93,32 @@ fn export_mode(circuit: &Circuit, interactive: bool) -> Result<String> {
 }
 
 pub(crate) fn identifier(name: &str) -> String {
-    if !name.is_empty()
+    if !matches!(
+        name,
+        "input"
+            | "output"
+            | "inout"
+            | "wire"
+            | "reg"
+            | "logic"
+            | "module"
+            | "endmodule"
+            | "assign"
+            | "always"
+            | "initial"
+            | "begin"
+            | "end"
+            | "if"
+            | "else"
+            | "parameter"
+            | "localparam"
+            | "integer"
+            | "signed"
+            | "unsigned"
+            | "tri"
+            | "supply0"
+            | "supply1"
+    ) && !name.is_empty()
         && name.chars().enumerate().all(|(index, ch)| {
             ch == '_'
                 || ch.is_ascii_alphabetic()
@@ -283,7 +308,12 @@ fn export_gate(text: &mut String, module: &Module, gate: &Gate) -> Result<()> {
             assign(text, "Q", state.clone())?;
             assign(text, "_Q", format!("~{state}"))?;
         }
-        GateKind::Comment | GateKind::Led | GateKind::Frame => {}
+        GateKind::InputPort
+        | GateKind::OutputPort
+        | GateKind::InoutPort
+        | GateKind::Comment
+        | GateKind::Led
+        | GateKind::Frame => {}
         GateKind::Module(name) => {
             let connections = gate
                 .pins

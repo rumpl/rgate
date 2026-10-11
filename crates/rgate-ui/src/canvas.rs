@@ -312,6 +312,8 @@ fn paint_gate(
             window,
             cx,
         );
+    } else if gate.kind.port_direction().is_some() {
+        crate::modern_gates::paint(gate, scene, bounds, window, cx);
     } else if gate.is_compact_bus_join() {
         let transform = |local: Point| {
             screen(
@@ -367,7 +369,11 @@ fn paint_gate(
     } else if crate::classic_gates::supports(&gate.kind) {
         crate::classic_gates::paint(gate, scene, bounds, window, cx);
     } else {
-        let rectangle = gate.bounds();
+        let rectangle = if matches!(gate.kind, GateKind::Module(_)) {
+            gate.module_body_bounds()
+        } else {
+            gate.bounds()
+        };
         let origin = screen(rectangle.min, bounds, &scene.viewport);
         let extent = rectangle.size() * zoom;
         window.paint_quad(quad(
@@ -391,6 +397,25 @@ fn paint_gate(
             cx,
         );
     }
+    if matches!(gate.kind, GateKind::Module(_)) && gate.config.custom_symbol.is_empty() {
+        for pin in &gate.pins {
+            let inward = Point::new(-pin.offset.x.signum() * 6.0, 0.0);
+            stroke(
+                [
+                    screen(gate.pin_position(pin), bounds, &scene.viewport),
+                    screen(
+                        gate.position + (pin.offset + inward).rotated(gate.rotation),
+                        bounds,
+                        &scene.viewport,
+                    ),
+                ],
+                module_lead_width(gate.pin_width(&pin.name), zoom),
+                rgb(scene.palette.module).into(),
+                false,
+                window,
+            );
+        }
+    }
     for pin in &gate.pins {
         if (matches!(gate.kind, GateKind::Module(_))
             || (gate.kind.is_extended() && !gate.is_compact_bus_join()))
@@ -404,13 +429,38 @@ fn paint_gate(
                     .map(|width| format!(" [{}:0]", width - 1))
                     .unwrap_or_default()
             );
+            let padding = if matches!(gate.kind, GateKind::Module(_))
+                && gate.config.custom_symbol.is_empty()
+            {
+                10.0
+            } else {
+                4.0
+            };
             let offset = if pin.direction == rgate_core::Direction::Output {
+                let run = gpui::TextRun {
+                    len: label.len(),
+                    font: font(if cfg!(target_family = "wasm") {
+                        "IBM Plex Sans"
+                    } else {
+                        "Helvetica"
+                    }),
+                    color: rgb(scene.palette.module).into(),
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                let shaped = window.text_system().shape_line(
+                    label.clone().into(),
+                    px((8.0 * zoom).clamp(6.0, 64.0)),
+                    &[run],
+                    None,
+                );
                 Point::new(
-                    pin.offset.x - label.len() as f32 * 5.0 - 4.0,
+                    pin.offset.x - f32::from(shaped.width) / zoom - padding,
                     pin.offset.y - 5.0,
                 )
             } else {
-                Point::new(pin.offset.x + 4.0, pin.offset.y - 5.0)
+                Point::new(pin.offset.x + padding, pin.offset.y - 5.0)
             };
             text(
                 &label,
@@ -430,7 +480,7 @@ fn paint_gate(
         if scene.hover_pin.as_ref() == Some(&reference) {
             circle(
                 position,
-                4.0,
+                5.0,
                 rgb(0xffffa0).into(),
                 rgb(scene.palette.wire).into(),
                 window,
@@ -438,7 +488,7 @@ fn paint_gate(
         } else if pin.net.is_none() {
             circle(
                 position,
-                1.8,
+                3.2,
                 rgb(scene.palette.panel).into(),
                 rgb(scene.palette.wire).into(),
                 window,
@@ -660,4 +710,19 @@ fn rect(
         dashed,
         window,
     );
+}
+
+fn module_lead_width(bits: u16, zoom: f32) -> f32 {
+    (if bits > 1 { 2.2 } else { 1.0 }) * zoom.max(0.85)
+}
+#[cfg(test)]
+mod lead_width_tests {
+    use super::*;
+    #[test]
+    fn scalar_and_bus_leads_match_wire_strokes() {
+        for zoom in [0.5, 1.0, 3.0] {
+            assert_eq!(module_lead_width(1, zoom), zoom.max(0.85));
+            assert_eq!(module_lead_width(8, zoom), 2.2 * zoom.max(0.85));
+        }
+    }
 }

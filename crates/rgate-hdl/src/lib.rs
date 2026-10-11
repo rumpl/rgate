@@ -20,7 +20,7 @@ pub use xezim_backend::XezimBackend;
 #[cfg(feature = "icarus")]
 mod icarus_backend;
 #[cfg(feature = "icarus")]
-pub use icarus_backend::{DiscoveredSignal, IcarusBackend};
+pub use icarus_backend::{DiscoveredSignal, IcarusBackend, check_sources};
 #[cfg(any(feature = "xezim", feature = "icarus"))]
 mod project;
 #[cfg(any(feature = "xezim", feature = "icarus"))]

@@ -38,7 +38,7 @@ pub fn crosses_body(a: Point, b: Point, rect: Rect) -> bool {
 }
 fn crossing(a: Point, b: Point, c: Point, d: Point) -> bool {
     if a.x == b.x && c.y == d.y {
-        a.x > c.x.min(d.x) && a.x < c.x.max(d.x) && c.y > a.y.min(b.y) && c.y < a.y.max(b.y)
+        a.x >= c.x.min(d.x) && a.x <= c.x.max(d.x) && c.y >= a.y.min(b.y) && c.y <= a.y.max(b.y)
     } else if a.y == b.y && c.x == d.x {
         crossing(c, d, a, b)
     } else {
@@ -127,6 +127,37 @@ pub fn route_selected(module: &mut Module, selected: &BTreeSet<WireId>) -> Resul
             .unwrap()
             .points = points;
     }
+    // Revisit early routes after later terminal leads are known. A first-pass
+    // route can otherwise cross a lead the router has not seen yet.
+    for _ in 0..2 {
+        let mut improved = false;
+        let ids = selected.iter().copied().collect::<Vec<_>>();
+        for id in ids {
+            let wire = module.wires.iter().find(|w| w.id == id).unwrap().clone();
+            let other = module
+                .wires
+                .iter()
+                .filter(|w| w.id != id)
+                .cloned()
+                .collect::<Vec<_>>();
+            let points = route(module, &wire, &obstacles, &other)?;
+            let before = crossing_count(module);
+            let mut candidate = module.clone();
+            candidate
+                .wires
+                .iter_mut()
+                .find(|w| w.id == id)
+                .unwrap()
+                .points = points;
+            if crossing_count(&candidate) < before {
+                *module = candidate;
+                improved = true;
+            }
+        }
+        if !improved {
+            break;
+        }
+    }
     Ok(())
 }
 fn route(
@@ -208,9 +239,12 @@ fn route(
             for other in existing.iter().filter(|other| other.net != wire.net) {
                 for segment in other.points.windows(2) {
                     if crossing(p, q, segment[0], segment[1]) {
-                        penalty += 90.0;
+                        penalty += 240.0;
                     }
-                    penalty += overlap(p, q, segment[0], segment[1]) * 1.5;
+                    let shared = overlap(p, q, segment[0], segment[1]);
+                    if shared > 0.0 {
+                        penalty += 240.0 + shared * 4.0;
+                    }
                 }
             }
             let distance = (p.x - q.x).abs() + (p.y - q.y).abs();

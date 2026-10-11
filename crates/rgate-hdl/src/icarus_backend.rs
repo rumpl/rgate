@@ -467,3 +467,20 @@ fn tool(name: &str) -> std::path::PathBuf {
     }
     name.into()
 }
+
+/// Check source on a worker without elaborating or launching simulation.
+pub fn check_sources(sources: &[(String, String)]) -> Result<(), SimError> {
+    let directory = tempfile::tempdir().map_err(|e| error(e.to_string()))?;
+    let mut command = Command::new(tool("iverilog"));
+    command
+        .current_dir(directory.path())
+        .args(["-g2012", "-i", "-tnull"]);
+    for (index, (name, source)) in sources.iter().enumerate() {
+        let filename = format!("lint{index}.sv");
+        let named = format!("`line 1 \"{name}.sv\" 0\n{source}");
+        std::fs::write(directory.path().join(&filename), named)
+            .map_err(|e| error(e.to_string()))?;
+        command.arg(filename);
+    }
+    run_tool(&mut command, &Arc::new(AtomicBool::new(false)))
+}
