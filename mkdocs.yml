@@ -56,6 +56,7 @@ nav:
       - Annotations: components/annotations.md
   - Examples:
       - Overview: examples/README.md
+      - Verilog LED chaser: examples/led-chaser.md
       - LC-3 computer: examples/lc3.md
       - Tiny VGA controller: examples/tiny-vga.md
   - Reference:

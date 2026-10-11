@@ -401,3 +401,65 @@ mod source_tests {
         );
     }
 }
+
+#[cfg(all(test, feature = "icarus"))]
+mod led_chaser_tests {
+    use super::*;
+    #[test]
+    fn verilog_led_chaser_runs_from_schematic_controls() {
+        let circuit =
+            rgate_format::parse(include_str!("../../../examples/verilog-led-chaser.rgate"))
+                .unwrap()
+                .circuit;
+        let root = circuit.module("main").unwrap();
+        let gate = |name: &str| root.gates.iter().find(|g| g.name == name).unwrap().id;
+        let net = root.nets.iter().find(|n| n.name == "leds").unwrap().id;
+        let inferred = rgate_format::hdl::inferred_nets(
+            circuit
+                .module("led_chaser")
+                .unwrap()
+                .verilog
+                .as_ref()
+                .unwrap(),
+            "led_chaser",
+            &[],
+        )
+        .unwrap();
+        assert_eq!(inferred.len(), 6);
+        let mut sim = LiveSimulation::verilog(&circuit, "main").unwrap();
+        sim.advance(100).unwrap();
+        assert_eq!(sim.value(net).unwrap().to_u64(), Some(1));
+        sim.set_input(gate("RESET"), Signal::from_u64(0, 1))
+            .unwrap();
+        sim.advance(300).unwrap();
+        assert_eq!(sim.value(net).unwrap().to_u64(), Some(1));
+        sim.advance(100).unwrap();
+        assert_eq!(sim.value(net).unwrap().to_u64(), Some(2));
+        sim.set_input(gate("ENABLE"), Signal::from_u64(0, 1))
+            .unwrap();
+        sim.advance(800).unwrap();
+        assert_eq!(sim.value(net).unwrap().to_u64(), Some(2));
+        sim.set_input(gate("REVERSE"), Signal::from_u64(1, 1))
+            .unwrap();
+        sim.set_input(gate("SPEED"), Signal::from_u64(0, 4))
+            .unwrap();
+        sim.set_input(gate("ENABLE"), Signal::from_u64(1, 1))
+            .unwrap();
+        sim.advance(100).unwrap();
+        assert_eq!(sim.value(net).unwrap().to_u64(), Some(1));
+        sim.advance(100).unwrap();
+        assert_eq!(sim.value(net).unwrap().to_u64(), Some(128));
+        let path = sim
+            .discovered_signals()
+            .iter()
+            .find(|s| s.path.ends_with("chaser.divider"))
+            .unwrap()
+            .path
+            .clone();
+        let time = sim.time();
+        let internal = sim.inspect_hdl(&path).unwrap();
+        sim.probe(internal).unwrap();
+        assert_eq!(sim.time(), time);
+        assert_eq!(sim.value(internal).unwrap().to_u64(), Some(0));
+    }
+}
