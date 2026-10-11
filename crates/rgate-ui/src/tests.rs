@@ -1853,3 +1853,29 @@ fn code_editor_keyboard_input_newlines_and_undo_do_not_trigger_canvas(cx: &mut T
         )
     });
 }
+
+#[cfg(feature = "icarus")]
+#[gpui::test]
+fn compiler_diagnostics_reach_source_editor(cx: &mut TestAppContext) {
+    let (view, cx) =
+        cx.add_window_view(|window, cx| GateApp::new(demo::full_adder(), None, window, cx));
+    cx.update(|window, cx| {
+        view.update(cx, |app, cx| {
+            app.command(Command::Example("pwm-verilog"), window, cx);
+            app.switch_module("pwm".into(), cx);
+            app.editor
+                .edit_module(|module| {
+                    module
+                        .verilog
+                        .as_mut()
+                        .unwrap()
+                        .push_str("\ninvalid syntax;\n")
+                })
+                .unwrap();
+            app.command(Command::ClockStep, window, cx);
+            assert!(app.simulation.is_none());
+            assert!(!app.hdl_diagnostics.is_empty(), "{:?}", app.messages);
+        })
+    });
+    cx.run_until_parked();
+}

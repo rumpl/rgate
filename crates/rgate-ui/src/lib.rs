@@ -121,3 +121,5 @@ mod viewport_tests;
 
 #[cfg(not(target_family = "wasm"))]
 mod source_editor;
+
+mod hdl_diagnostics;

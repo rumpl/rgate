@@ -107,6 +107,7 @@ impl GateApp {
                     && this.simulation.is_none()
                     && this.editor.active_module() == name
                 {
+                    this.hdl_diagnostics.clear();
                     let source = input.read(cx).value().to_string();
                     if let Err(error) = this
                         .editor
@@ -131,7 +132,58 @@ impl GateApp {
             let source = source.clone();
             input.update(cx, |editor, cx| editor.set_value(source, window, cx));
         }
+        let diagnostics = self
+            .hdl_diagnostics
+            .iter()
+            .filter(|d| d.module == self.editor.active_module())
+            .cloned()
+            .collect::<Vec<_>>();
+        let text = input.read(cx).value().to_string();
+        input.update(cx, |state, cx| {
+            if let Some(set) = state.diagnostics_mut() {
+                set.clear();
+                for diagnostic in &diagnostics {
+                    let row = diagnostic.line.saturating_sub(1);
+                    let len = text
+                        .lines()
+                        .nth(row as usize)
+                        .map_or(1, |line| line.encode_utf16().count().max(1))
+                        as u32;
+                    set.push(
+                        gpui_component::highlighter::Diagnostic::new(
+                            gpui_component::input::Position::new(row, 0)
+                                ..gpui_component::input::Position::new(row, len),
+                            diagnostic.message.clone(),
+                        )
+                        .with_severity(gpui_component::highlighter::DiagnosticSeverity::Error),
+                    );
+                }
+            }
+            if let Some(line) = self.diagnostic_line.take() {
+                state.set_cursor_position(
+                    gpui_component::input::Position::new(line.saturating_sub(1), 0),
+                    window,
+                    cx,
+                );
+            }
+        });
         let palette = self.theme.palette();
+        let mut errors = div().flex().flex_col();
+        for (index, diagnostic) in diagnostics.into_iter().enumerate() {
+            errors = errors.child(
+                div()
+                    .id(("source-diagnostic", index))
+                    .px(px(8.0))
+                    .text_color(rgb(palette.error))
+                    .cursor_pointer()
+                    .child(format!("Line {}: {}", diagnostic.line, diagnostic.message))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.diagnostic_line = Some(diagnostic.line);
+                        cx.notify();
+                    })),
+            );
+        }
+
         div()
             .id("verilog-edit-tab")
             .flex_1()
@@ -162,6 +214,7 @@ impl GateApp {
                     )
                     .child("Changes saved to document"),
             )
+            .child(errors)
             .child(
                 div().flex_1().min_h_0().min_w_0().child(
                     Editor::new(&input)

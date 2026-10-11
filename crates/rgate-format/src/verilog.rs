@@ -21,6 +21,7 @@ fn export_mode(circuit: &Circuit, interactive: bool) -> Result<String> {
     );
     for module in &circuit.modules {
         if let Some(source) = &module.verilog {
+            writeln!(output, "`line 1 \"{}.sv\" 0", module.name)?;
             output.push_str(source);
             output.push_str(
                 "

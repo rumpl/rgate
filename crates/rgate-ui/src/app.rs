@@ -145,6 +145,8 @@ pub enum Dialog {
 }
 
 pub struct GateApp {
+    pub hdl_diagnostics: Vec<crate::hdl_diagnostics::HdlDiagnostic>,
+    pub diagnostic_line: Option<u32>,
     #[cfg(not(target_family = "wasm"))]
     pub source_editor: Option<crate::source_editor::SourceEditor>,
     pub theme: Theme,
@@ -213,6 +215,7 @@ impl GateApp {
         })
         .detach();
         let mut this = Self {
+            hdl_diagnostics:Vec::new(),diagnostic_line:None,
             #[cfg(not(target_family="wasm"))]
             source_editor:None,
             waveform_search,
@@ -307,7 +310,9 @@ impl GateApp {
     }
 
     fn error(&mut self, error: impl std::fmt::Display) {
-        self.log(format!("Error: {error}"));
+        let message = error.to_string();
+        self.hdl_diagnostics = crate::hdl_diagnostics::parse(&message);
+        self.log(format!("Error: {message}"));
     }
 
     pub fn changed(&mut self) {
@@ -1034,6 +1039,7 @@ impl GateApp {
         };
         match result {
             Ok(mut simulator) => {
+                self.hdl_diagnostics.clear();
                 for net in &self.probes {
                     if let Err(error) = simulator.probe(*net) {
                         self.messages.push(error.to_string());
