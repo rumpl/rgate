@@ -675,6 +675,48 @@ impl Editor {
         })
     }
 
+    pub fn swap_inputs(&mut self, id: GateId, first: &str, second: &str) -> Result<(), EditError> {
+        let gate = self.module().gate(id).ok_or(EditError::UnknownEndpoint)?;
+        let a = gate.pin(first).ok_or(EditError::UnknownEndpoint)?;
+        let b = gate.pin(second).ok_or(EditError::UnknownEndpoint)?;
+        if first == second || a.direction != Direction::Input || b.direction != Direction::Input {
+            return Err(EditError::Invalid(
+                "Choose two different input pins on the same component.".into(),
+            ));
+        }
+        if gate.pin_width(first) != gate.pin_width(second) {
+            return Err(EditError::WidthMismatch(
+                gate.pin_width(first),
+                gate.pin_width(second),
+            ));
+        }
+        let (a_net, b_net) = (a.net, b.net);
+        let selected = BTreeSet::from([id]);
+        self.edit_module(|module| {
+            let mut old = endpoint_positions(module, &selected);
+            let a_ref = PinRef::new(id, first);
+            let b_ref = PinRef::new(id, second);
+            let (a_position, b_position) = (old[&a_ref], old[&b_ref]);
+            old.insert(a_ref, b_position);
+            old.insert(b_ref, a_position);
+            let gate = module.gate_mut(id).unwrap();
+            gate.pin_mut(first).unwrap().net = b_net;
+            gate.pin_mut(second).unwrap().net = a_net;
+            for wire in &mut module.wires {
+                for reference in [&mut wire.start, &mut wire.end].into_iter().flatten() {
+                    if reference.gate == id {
+                        if reference.pin == first {
+                            reference.pin = second.into();
+                        } else if reference.pin == second {
+                            reference.pin = first.into();
+                        }
+                    }
+                }
+            }
+            update_wire_endpoints(module, &old, &selected);
+        })
+    }
+
     pub fn delete_selection(&mut self) -> Result<(), EditError> {
         let selected = self.selection.clone();
         let wires = self.selected_wires.clone();
@@ -1254,6 +1296,136 @@ mod tests {
 
     fn editor() -> Editor {
         Editor::new(demo::full_adder()).unwrap()
+    }
+
+    #[test]
+    fn swapping_inputs_preserves_nets_wire_ends_and_undo() {
+        for rotation in 0..4 {
+            let mut editor = editor();
+            let id = editor
+                .module()
+                .gates
+                .iter()
+                .find(|gate| gate.kind == GateKind::Or)
+                .unwrap()
+                .id;
+            editor
+                .edit_module(|module| {
+                    let old = endpoint_positions(module, &BTreeSet::from([id]));
+                    module.gate_mut(id).unwrap().rotation = rotation;
+                    update_wire_endpoints(module, &old, &BTreeSet::from([id]));
+                    // Exercise references on either end of a wire.
+                    for wire in &mut module.wires {
+                        if wire
+                            .end
+                            .as_ref()
+                            .is_some_and(|pin| pin.gate == id && pin.pin == "I0")
+                        {
+                            std::mem::swap(&mut wire.start, &mut wire.end);
+                            wire.points.reverse();
+                        }
+                    }
+                })
+                .unwrap();
+            let before = editor.circuit().clone();
+            let gate = editor.module().gate(id).unwrap();
+            let (a, b) = (gate.pin("I0").unwrap().net, gate.pin("I1").unwrap().net);
+            editor.swap_inputs(id, "I0", "I1").unwrap();
+            let gate = editor.module().gate(id).unwrap();
+            assert_eq!(gate.pin("I0").unwrap().net, b);
+            assert_eq!(gate.pin("I1").unwrap().net, a);
+            assert_eq!(editor.module().nets, before.modules[0].nets);
+            for wire in &editor.module().wires {
+                for (reference, point) in [
+                    (&wire.start, wire.points.first()),
+                    (&wire.end, wire.points.last()),
+                ] {
+                    if let Some(reference) = reference {
+                        assert_eq!(editor.module().pin_position(reference), point.copied());
+                    }
+                }
+            }
+            editor.circuit().validate().unwrap();
+            let swapped = editor.circuit().clone();
+            editor.undo();
+            assert_eq!(editor.circuit(), &before);
+            editor.redo();
+            assert_eq!(editor.circuit(), &swapped);
+        }
+    }
+
+    #[test]
+    fn swapping_selected_pair_leaves_other_inputs_and_checks_widths() {
+        let mut editor = Editor::new(Circuit::default()).unwrap();
+        let id = editor.place(GateKind::And, Point::ZERO).unwrap();
+        editor
+            .edit_module(|module| {
+                let gate = module.gate_mut(id).unwrap();
+                gate.input_count = 4;
+                gate.reset_pins();
+                for (index, pin) in gate.pins.iter_mut().take(4).enumerate() {
+                    let net = NetId(index as u64 + 1);
+                    pin.net = Some(net);
+                }
+                for index in 0..4 {
+                    module
+                        .nets
+                        .push(Net::new(NetId(index + 1), format!("input{index}"), 1));
+                }
+            })
+            .unwrap();
+        editor.swap_inputs(id, "I0", "I3").unwrap();
+        let gate = editor.module().gate(id).unwrap();
+        for (pin, net) in [("I0", 4), ("I1", 2), ("I2", 3), ("I3", 1)] {
+            assert_eq!(gate.pin(pin).unwrap().net, Some(NetId(net)));
+        }
+        let before = editor.circuit().clone();
+        assert!(editor.swap_inputs(id, "I0", "I0").is_err());
+        assert!(editor.swap_inputs(id, "I0", "Z").is_err());
+        assert!(editor.swap_inputs(id, "I0", "missing").is_err());
+        assert_eq!(editor.circuit(), &before);
+        editor
+            .edit_module(|module| {
+                module.gate_mut(id).unwrap().pin_mut("I3").unwrap().width = Some(8)
+            })
+            .unwrap();
+        let before = editor.circuit().clone();
+        assert!(matches!(
+            editor.swap_inputs(id, "I0", "I3"),
+            Err(EditError::WidthMismatch(1, 8))
+        ));
+        assert_eq!(editor.circuit(), &before);
+    }
+
+    #[test]
+    fn swapping_connected_and_unconnected_inputs_keeps_wire_on_its_net() {
+        let mut editor = Editor::new(Circuit::default()).unwrap();
+        let source = editor
+            .place(GateKind::Switch, Point::new(20., 30.))
+            .unwrap();
+        let target = editor.place(GateKind::Or, Point::new(100., 30.)).unwrap();
+        editor
+            .start_wire(Hit::Pin(PinRef::new(source, "Z")))
+            .unwrap();
+        let net = editor
+            .finish_wire(Hit::Pin(PinRef::new(target, "I0")))
+            .unwrap();
+        editor.swap_inputs(target, "I0", "I1").unwrap();
+        assert_eq!(
+            editor.module().pin(&PinRef::new(target, "I0")).unwrap().net,
+            None
+        );
+        assert_eq!(
+            editor.module().pin(&PinRef::new(target, "I1")).unwrap().net,
+            Some(net)
+        );
+        let wire = &editor.module().wires[0];
+        assert_eq!(wire.net, net);
+        assert_eq!(wire.end, Some(PinRef::new(target, "I1")));
+        assert_eq!(
+            wire.points.last().copied(),
+            editor.module().pin_position(&PinRef::new(target, "I1"))
+        );
     }
 
     #[test]

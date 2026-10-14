@@ -20,6 +20,7 @@ pub struct Scene {
     pub probes: BTreeSet<NetId>,
     pub grid: bool,
     pub hover_pin: Option<rgate_core::PinRef>,
+    pub swap_pin: Option<rgate_core::PinRef>,
     pub draft: Vec<Point>,
     pub ghost: Option<Gate>,
     pub marquee: Option<Rect>,
@@ -477,7 +478,9 @@ fn paint_gate(
         }
         let reference = rgate_core::PinRef::new(gate.id, &pin.name);
         let position = screen(gate.pin_position(pin), bounds, &scene.viewport);
-        if scene.hover_pin.as_ref() == Some(&reference) {
+        if scene.hover_pin.as_ref() == Some(&reference)
+            || scene.swap_pin.as_ref() == Some(&reference)
+        {
             circle(
                 position,
                 5.0,

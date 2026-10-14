@@ -7,7 +7,9 @@ use gpui::{
 };
 #[cfg(not(target_family = "wasm"))]
 use gpui::{PathPromptOptions, PromptLevel};
-use rgate_core::{Circuit, GateId, GateKind, Module, NetId, Point, Rect, Signal, demo, route_to};
+use rgate_core::{
+    Circuit, Direction, GateId, GateKind, Module, NetId, Point, Rect, Signal, demo, route_to,
+};
 use rgate_editor::{Editor, Hit, Tool};
 use rgate_sim::Simulator;
 use std::{collections::BTreeSet, path::PathBuf, time::Duration};
@@ -196,6 +198,7 @@ pub struct GateApp {
     pub message_log: Entity<crate::message_log::MessageLog>,
     pub status: String,
     pub hover: Option<Hit>,
+    pub input_swap: Option<(GateId, Option<String>)>,
     pub mouse: Point,
     pub popup: Option<Popup>,
     pub menu_bounds: Vec<Bounds<Pixels>>,
@@ -257,7 +260,7 @@ impl GateApp {
             nets_ports: false, module_list: false, collapsed_modules: std::collections::HashSet::new(), probes: BTreeSet::new(),
             messages: vec!["RGate 0.1 — TkGate-style circuit editing, powered by Rust + GPUI.".into(),
                 "Click a tool to place gates. W connects pins; Space runs; double-click a wire probes it.".into()],
-            status: "Ready".into(), hover: None, mouse: Point::ZERO, popup: None, menu_bounds: Vec::new(), dialog: None, drag: None,
+            status: "Ready".into(), hover: None, input_swap: None, mouse: Point::ZERO, popup: None, menu_bounds: Vec::new(), dialog: None, drag: None,
             canvas_bounds: Bounds::default(), sidebar_width: 210.0, components_width:205.0, modules_height:196.0, sidebar_bounds:Bounds::default(), bottom_height: 176.0,
             need_fit: true, closing: false, prompting: false, timer: None,
         };
@@ -353,6 +356,7 @@ impl GateApp {
     }
 
     pub fn changed(&mut self) {
+        self.input_swap = None;
         #[cfg(feature = "icarus")]
         self.cancel_compilation();
         self.simulation = None;
@@ -366,6 +370,7 @@ impl GateApp {
 
     pub fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         self.popup = None;
+        self.input_swap = None;
         if matches!(command, Command::LoadMemory)
             && matches!(self.dialog, Some(Dialog::Properties(_)))
         {
@@ -565,6 +570,38 @@ impl GateApp {
                     self.error(error);
                 } else {
                     self.changed();
+                }
+            }
+            Command::SwapInputs => {
+                if self.simulation.is_some() {
+                    self.log("Stop simulation before swapping inputs.".into());
+                } else if self.editor.selection.len() == 1 {
+                    let id = *self.editor.selection.iter().next().unwrap();
+                    let inputs = self
+                        .editor
+                        .module()
+                        .gate(id)
+                        .unwrap()
+                        .pins
+                        .iter()
+                        .filter(|pin| pin.direction == Direction::Input)
+                        .map(|pin| pin.name.clone())
+                        .collect::<Vec<_>>();
+                    if inputs.len() == 2 {
+                        match self.editor.swap_inputs(id, &inputs[0], &inputs[1]) {
+                            Ok(()) => {
+                                self.changed();
+                                self.log("Input connections swapped.".into());
+                            }
+                            Err(error) => self.error(error),
+                        }
+                    } else if inputs.len() > 2 {
+                        self.editor.cancel();
+                        self.drag = None;
+                        self.input_swap = Some((id, None));
+                        self.status =
+                            "Swap inputs: click the first input pin; Escape cancels.".into();
+                    }
                 }
             }
             Command::Tool(tool) => {
@@ -787,6 +824,7 @@ impl GateApp {
     }
 
     fn replace_circuit(&mut self, circuit: Circuit, path: Option<PathBuf>) {
+        self.input_swap = None;
         if path
             .as_ref()
             .is_some_and(|p| p.extension().is_some_and(|s| s == "v" || s == "sv"))
@@ -1254,6 +1292,7 @@ impl GateApp {
     }
 
     pub fn switch_module(&mut self, name: String, cx: &mut Context<Self>) {
+        self.input_swap = None;
         if let Some(sim) = &self.simulation {
             let paths = sim
                 .scopes()
@@ -2235,6 +2274,46 @@ impl GateApp {
         self.popup = None;
         let point = self.canvas_point(event.position);
         let hit = self.editor.hit_test(point, 4.5 / self.editor.viewport.zoom);
+        if let Some((id, first)) = self.input_swap.clone() {
+            if event.button == gpui::MouseButton::Left {
+                if let Some(Hit::Pin(reference)) = &hit
+                    && reference.gate == id
+                    && self
+                        .editor
+                        .module()
+                        .pin(reference)
+                        .is_some_and(|pin| pin.direction == Direction::Input)
+                {
+                    if let Some(first) = first {
+                        match self.editor.swap_inputs(id, &first, &reference.pin) {
+                            Ok(()) => {
+                                self.changed();
+                                self.log("Input connections swapped.".into());
+                            }
+                            Err(error) => self.error(error),
+                        }
+                    } else {
+                        self.input_swap = Some((id, Some(reference.pin.clone())));
+                        let net = self
+                            .editor
+                            .module()
+                            .pin(reference)
+                            .and_then(|pin| pin.net)
+                            .and_then(|net| self.editor.module().net(net))
+                            .map_or("unconnected", |net| net.name.as_str());
+                        self.status = format!(
+                            "Swap inputs: {} ({net}) selected; click the second input pin. Escape cancels.",
+                            reference.pin
+                        );
+                    }
+                }
+                cx.notify();
+                return;
+            }
+            if event.button == gpui::MouseButton::Right {
+                self.input_swap = None;
+            }
+        }
         if event.modifiers.platform || event.modifiers.control || event.click_count >= 2 {
             let target = self
                 .editor
@@ -2290,7 +2369,11 @@ impl GateApp {
                     self.editor.selected_wires.insert(*id);
                     self.editor.selected_net = Some(*net);
                 }
-                _ => {}
+                _ => {
+                    self.editor.selection.clear();
+                    self.editor.selected_wires.clear();
+                    self.editor.selected_net = None;
+                }
             }
             self.popup = Some(Popup {
                 menu: "Canvas".into(),
@@ -2738,6 +2821,8 @@ impl GateApp {
             "escape" => {
                 cx.stop_active_drag(window);
                 self.editor.cancel();
+                self.input_swap = None;
+                self.status = "Ready".into();
                 self.popup = None;
                 self.drag = None;
                 cx.notify();
@@ -2857,6 +2942,9 @@ impl GateApp {
                 .map(|net| net.id)
                 .collect(),
             grid: self.editor.show_grid,
+            swap_pin: self.input_swap.as_ref().and_then(|(gate, pin)| {
+                pin.as_ref().map(|pin| rgate_core::PinRef::new(*gate, pin))
+            }),
             hover_pin: match &self.hover {
                 Some(Hit::Pin(pin)) => Some(pin.clone()),
                 _ => None,

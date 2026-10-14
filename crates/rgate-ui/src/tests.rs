@@ -2001,3 +2001,201 @@ fn verilog_ports_summary_refreshes_source_without_manual_interface_fields(cx: &m
     cx.update(|window, cx| view.update(cx, |app, cx| app.dismiss_dialog(window, cx)));
     assert!(view.read_with(cx, |app, _| app.dialog.is_none()));
 }
+
+#[gpui::test]
+fn context_menu_swaps_two_inputs_and_undo_restores_wires(cx: &mut TestAppContext) {
+    cx.update(commands::install);
+    let (view, cx) =
+        cx.add_window_view(|window, cx| GateApp::new(demo::full_adder(), None, window, cx));
+    cx.run_until_parked();
+    let (id, position, before, original) = view.read_with(cx, |app, _| {
+        let gate = app
+            .editor
+            .module()
+            .gates
+            .iter()
+            .find(|gate| gate.kind == GateKind::Or)
+            .unwrap();
+        let p = app.editor.viewport.to_screen(gate.position);
+        (
+            gate.id,
+            app.canvas_bounds.origin + point(px(p.x), px(p.y)),
+            app.editor.circuit().clone(),
+            gate.pin("I0").unwrap().net,
+        )
+    });
+    cx.simulate_mouse_down(position, MouseButton::Right, Modifiers::default());
+    cx.simulate_mouse_up(position, MouseButton::Right, Modifiers::default());
+    cx.run_until_parked();
+    let item = cx.debug_bounds("popup-item-5").unwrap().center();
+    cx.simulate_click(item, Modifiers::default());
+    assert!(view.read_with(cx, |app, _| {
+        app.popup.is_none()
+            && app.input_swap.is_none()
+            && app.editor.module().gate(id).unwrap().pin("I1").unwrap().net == original
+    }));
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(
+        view.read_with(cx, |app, _| app.editor.circuit().clone()),
+        before
+    );
+}
+
+#[gpui::test]
+fn multi_input_swap_selects_two_pins_and_escape_cancels(cx: &mut TestAppContext) {
+    let mut circuit = rgate_core::Circuit::default();
+    let id = GateId(1);
+    let mut gate = rgate_core::Gate::new(id, GateKind::Or, Point::new(120., 100.));
+    gate.input_count = 4;
+    gate.reset_pins();
+    for (index, pin) in gate.pins.iter_mut().take(4).enumerate() {
+        let net = NetId(index as u64 + 1);
+        pin.net = Some(net);
+        circuit.modules[0]
+            .nets
+            .push(rgate_core::Net::new(net, format!("input{index}"), 1));
+    }
+    circuit.modules[0].gates.push(gate);
+    let before = circuit.clone();
+    let (view, cx) = cx.add_window_view(|window, cx| GateApp::new(circuit, None, window, cx));
+    cx.run_until_parked();
+    let start = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| {
+            view.update(cx, |app, cx| {
+                app.editor.select(id, false);
+                app.command(Command::SwapInputs, window, cx);
+            });
+        });
+    };
+    start(cx);
+    let pin_position = |name: &str, cx: &gpui::VisualTestContext| {
+        view.read_with(cx, |app, _| {
+            let p = app.editor.viewport.to_screen(
+                app.editor
+                    .module()
+                    .pin_position(&rgate_core::PinRef::new(id, name))
+                    .unwrap(),
+            );
+            app.canvas_bounds.origin + point(px(p.x), px(p.y))
+        })
+    };
+    cx.simulate_click(pin_position("I0", cx), Modifiers::default());
+    assert_eq!(
+        view.read_with(cx, |app, _| app.input_swap.clone()),
+        Some((id, Some("I0".into())))
+    );
+    assert_eq!(
+        view.read_with(cx, |app, _| app.scene().swap_pin),
+        Some(rgate_core::PinRef::new(id, "I0"))
+    );
+    cx.simulate_keystrokes("escape");
+    assert!(view.read_with(cx, |app, _| app.input_swap.is_none()));
+    assert_eq!(
+        view.read_with(cx, |app, _| app.editor.circuit().clone()),
+        before
+    );
+    start(cx);
+    cx.simulate_click(pin_position("I0", cx), Modifiers::default());
+    cx.simulate_click(pin_position("Z", cx), Modifiers::default());
+    assert!(view.read_with(cx, |app, _| app.input_swap.is_some()));
+    cx.simulate_click(pin_position("I3", cx), Modifiers::default());
+    view.read_with(cx, |app, _| {
+        assert!(app.input_swap.is_none());
+        assert!(app.editor.draft.is_none());
+        let gate = app.editor.module().gate(id).unwrap();
+        for (pin, net) in [("I0", 4), ("I1", 2), ("I2", 3), ("I3", 1)] {
+            assert_eq!(gate.pin(pin).unwrap().net, Some(NetId(net)));
+        }
+    });
+}
+
+#[gpui::test]
+fn canvas_context_menu_distinguishes_empty_space_components_and_wires(cx: &mut TestAppContext) {
+    let (view, cx) =
+        cx.add_window_view(|window, cx| GateApp::new(demo::full_adder(), None, window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| view.update(cx, |app, _| app.editor.select(GateId(1), false)));
+    let empty = view.read_with(cx, |app, _| {
+        app.canvas_bounds.origin + point(px(8.), px(8.))
+    });
+    cx.simulate_mouse_down(empty, MouseButton::Right, Modifiers::default());
+    cx.simulate_mouse_up(empty, MouseButton::Right, Modifiers::default());
+    view.read_with(cx, |app, _| {
+        assert!(app.editor.selection.is_empty());
+        assert!(app.editor.selected_wires.is_empty());
+        assert!(app.editor.selected_net.is_none());
+        let labels = app
+            .canvas_menu_entries()
+            .into_iter()
+            .filter(|entry| entry.command.is_some())
+            .map(|entry| entry.label)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels,
+            ["Paste", "Select / move", "Connect wires", "Fit circuit"]
+        );
+    });
+    cx.simulate_keystrokes("escape");
+    let component = view.read_with(cx, |app, _| {
+        let p = app
+            .editor
+            .viewport
+            .to_screen(app.editor.module().gate(GateId(1)).unwrap().position);
+        app.canvas_bounds.origin + point(px(p.x), px(p.y))
+    });
+    cx.simulate_mouse_down(component, MouseButton::Right, Modifiers::default());
+    cx.simulate_mouse_up(component, MouseButton::Right, Modifiers::default());
+    view.read_with(cx, |app, _| {
+        let labels = app
+            .canvas_menu_entries()
+            .into_iter()
+            .filter(|entry| entry.command.is_some())
+            .map(|entry| entry.label)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels,
+            ["Properties…", "Copy", "Delete", "Rotate clockwise"]
+        );
+    });
+    cx.simulate_keystrokes("escape");
+    let wire_position = view.read_with(cx, |app, _| {
+        let world = app
+            .editor
+            .module()
+            .wires
+            .iter()
+            .flat_map(|wire| wire.points.windows(2))
+            .map(|segment| (segment[0] + segment[1]) / 2.)
+            .find(|p| {
+                matches!(
+                    app.editor.hit_test(*p, 4.5 / app.editor.viewport.zoom),
+                    Some(rgate_editor::Hit::Wire { .. })
+                )
+            })
+            .unwrap();
+        let p = app.editor.viewport.to_screen(world);
+        app.canvas_bounds.origin + point(px(p.x), px(p.y))
+    });
+    cx.simulate_mouse_down(wire_position, MouseButton::Right, Modifiers::default());
+    cx.simulate_mouse_up(wire_position, MouseButton::Right, Modifiers::default());
+    view.read_with(cx, |app, _| {
+        assert!(app.editor.selection.is_empty());
+        assert_eq!(app.editor.selected_wires.len(), 1);
+        let labels = app
+            .canvas_menu_entries()
+            .into_iter()
+            .map(|entry| entry.label)
+            .collect::<Vec<_>>();
+        assert_eq!(labels, ["Net properties…", "Delete wire"]);
+    });
+    cx.update(|window, cx| view.update(cx, |app, cx| app.command(Command::PlayPause, window, cx)));
+    view.read_with(cx, |app, _| {
+        assert!(app.simulation.is_some());
+        let labels = app
+            .canvas_menu_entries()
+            .into_iter()
+            .map(|entry| entry.label)
+            .collect::<Vec<_>>();
+        assert_eq!(labels, ["Net properties…"]);
+    });
+}

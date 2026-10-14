@@ -1219,6 +1219,56 @@ impl GateApp {
             .into_any_element()
     }
 
+    pub(crate) fn canvas_menu_entries(&self) -> Vec<commands::MenuEntry> {
+        let menu = if !self.editor.selection.is_empty() {
+            "CanvasComponent"
+        } else if !self.editor.selected_wires.is_empty() {
+            "CanvasWire"
+        } else {
+            "Canvas"
+        };
+        let inputs = (self.editor.selection.len() == 1)
+            .then(|| {
+                self.editor
+                    .module()
+                    .gate(*self.editor.selection.iter().next().unwrap())
+            })
+            .flatten()
+            .map_or(0, |gate| {
+                gate.pins
+                    .iter()
+                    .filter(|pin| pin.direction == rgate_core::Direction::Input)
+                    .count()
+            });
+        let mut entries = commands::entries(menu);
+        entries.retain(|entry| match &entry.command {
+            Some(Command::SwapInputs) => inputs >= 2 && self.simulation.is_none(),
+            Some(Command::Delete | Command::Rotate(_) | Command::Paste | Command::Tool(_)) => {
+                self.simulation.is_none()
+            }
+            _ => true,
+        });
+        if inputs > 2 {
+            for entry in &mut entries {
+                if matches!(entry.command, Some(Command::SwapInputs)) {
+                    entry.label = "Swap inputs…";
+                }
+            }
+        }
+        // Filtering unavailable actions must not leave dangling separators.
+        let mut previous_separator = true;
+        entries.retain(|entry| {
+            let separator = entry.command.is_none();
+            let keep = !separator || !previous_separator;
+            previous_separator = separator;
+            keep
+        });
+        if entries.last().is_some_and(|entry| entry.command.is_none()) {
+            entries.pop();
+        }
+        entries
+    }
+
     fn popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let popup = self.popup.as_ref()?;
         let mut items = div()
@@ -1249,7 +1299,12 @@ impl GateApp {
             .shadow_lg()
             .py(px(3.0))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
-        for (index, entry) in commands::entries(&popup.menu).into_iter().enumerate() {
+        let entries = if popup.menu == "Canvas" {
+            self.canvas_menu_entries()
+        } else {
+            commands::entries(&popup.menu)
+        };
+        for (index, entry) in entries.into_iter().enumerate() {
             if let Some(command) = entry.command {
                 let selected = matches!(command, Command::SetTheme(theme) if theme == self.theme);
                 items = items.child(

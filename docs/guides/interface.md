@@ -166,3 +166,14 @@ simulation problems.
 
 See [shortcuts](../reference/shortcuts.md) and
 [troubleshooting](../reference/troubleshooting.md).
+
+## Swap component inputs
+
+Right-click a component and choose **Swap inputs** to exchange its two input
+connections without logically inverting either signal. For components with more
+than two inputs, choose **Swap inputs…**, then click the two input pins to swap.
+The first pin is highlighted; the status bar shows its pin and net names.
+Press Escape to cancel without changing the circuit.
+
+The pins must have matching widths. Other inputs and net names are unchanged,
+and Undo restores the connections and wire paths. Stop simulation before swapping.
