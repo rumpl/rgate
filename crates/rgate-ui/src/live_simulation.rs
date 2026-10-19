@@ -463,3 +463,153 @@ mod led_chaser_tests {
         assert_eq!(sim.value(internal).unwrap().to_u64(), Some(0));
     }
 }
+
+#[cfg(all(test, feature = "icarus"))]
+mod lc3_hdl_tests {
+    use super::*;
+
+    #[test]
+    fn hdl_lc3_executes_indirect_memory_and_subroutine_paths() {
+        let mut circuit = rgate_format::parse(include_str!("../../../examples/lc3-hdl.rgate"))
+            .unwrap()
+            .circuit;
+        let source = circuit
+            .module_mut("LC3MemoryHDL")
+            .unwrap()
+            .verilog
+            .as_mut()
+            .unwrap();
+        let start = source.find("        memory[16'h").unwrap();
+        let end = source[start..].find("    end").unwrap() + start;
+        let program = [
+            (0x3000, 0xe21f),
+            (0x3001, 0x6040),
+            (0x3002, 0x7041),
+            (0x3003, 0xa41f),
+            (0x3004, 0xb41f),
+            (0x3005, 0x5002),
+            (0x3006, 0x903f),
+            (0x3007, 0x4805),
+            (0x3008, 0x281c),
+            (0x3009, 0x4100),
+            (0x300a, 0xf025),
+            (0x300d, 0x16e1),
+            (0x300e, 0xc1c0),
+            (0x300f, 0x16e1),
+            (0x3010, 0xc1c0),
+            (0x3020, 0x00f0),
+            (0x3023, 0x4000),
+            (0x3024, 0x4001),
+            (0x3025, 0x300f),
+            (0x4000, 0x1234),
+        ];
+        let image = program
+            .iter()
+            .map(|(address, word)| format!("        memory[16'h{address:04x}] = 16'h{word:04x};\n"))
+            .collect::<String>();
+        source.replace_range(start..end, &image);
+        // Expose the two store destinations through existing observation ports.
+        *source = source.replace("assign RESULT = memory[16'h3020];", "assign RESULT = memory[16'h3021];")
+            .replace("assign READ_DATA = memory[ADDRESS];", "assign READ_DATA = memory[ADDRESS];\n    wire [15:0] indirect_result = memory[16'h4001];");
+        let root = circuit.module("main").unwrap();
+        let reset = root
+            .gates
+            .iter()
+            .find(|gate| gate.name == "RESET_N")
+            .unwrap()
+            .id;
+        let net = |name: &str| root.nets.iter().find(|net| net.name == name).unwrap().id;
+        let mut sim = LiveSimulation::verilog(&circuit, "main").unwrap();
+        sim.advance(500).unwrap();
+        sim.set_input(reset, Signal::from_u64(1, 1)).unwrap();
+        for _ in 0..500 {
+            sim.advance(500).unwrap();
+            if sim.value(net("HALTED")).unwrap().to_u64() == Some(1) {
+                break;
+            }
+        }
+        for (name, expected) in [
+            ("HALTED", 1),
+            ("R0", 0xffcf),
+            ("R2", 0x1234),
+            ("R3", 2),
+            ("RESULT", 0xf0),
+        ] {
+            assert_eq!(
+                sim.value(net(name)).unwrap().to_u64(),
+                Some(expected),
+                "{name}"
+            );
+        }
+        let path = sim
+            .discovered_signals()
+            .iter()
+            .find(|signal| signal.path.ends_with("main_memory.indirect_result"))
+            .unwrap()
+            .path
+            .clone();
+        let observed = sim.inspect_hdl(&path).unwrap();
+        assert_eq!(sim.value(observed).unwrap().to_u64(), Some(0x1234));
+    }
+
+    #[test]
+    fn hdl_lc3_runs_sum_and_trap_program_from_schematic_controls() {
+        let circuit = rgate_format::parse(include_str!("../../../examples/lc3-hdl.rgate"))
+            .unwrap()
+            .circuit;
+        let root = circuit.module("main").unwrap();
+        let net = |name: &str| root.nets.iter().find(|net| net.name == name).unwrap().id;
+        let reset = root
+            .gates
+            .iter()
+            .find(|gate| gate.name == "RESET_N")
+            .unwrap()
+            .id;
+        for module in circuit
+            .modules
+            .iter()
+            .filter(|module| module.verilog.is_some())
+        {
+            let inferred = rgate_format::hdl::inferred_nets(
+                module.verilog.as_ref().unwrap(),
+                &module.name,
+                &module.nets,
+            )
+            .unwrap();
+            assert_eq!(inferred, module.nets);
+        }
+        let mut sim = LiveSimulation::verilog(&circuit, "main").unwrap();
+        sim.advance(500).unwrap();
+        assert_eq!(sim.value(net("PC")).unwrap().to_u64(), Some(0));
+        sim.set_input(reset, Signal::from_u64(1, 1)).unwrap();
+        for _ in 0..1000 {
+            sim.advance(500).unwrap();
+            if sim.value(net("HALTED")).unwrap().to_u64() == Some(1) {
+                break;
+            }
+        }
+        for (name, expected) in [
+            ("HALTED", 1),
+            ("RESULT", 15),
+            ("CONSOLE", 0x48490a),
+            ("TX_COUNT", 3),
+            ("R1", 0),
+            ("STATE", 255),
+        ] {
+            assert_eq!(
+                sim.value(net(name)).unwrap().to_u64(),
+                Some(expected),
+                "{name}"
+            );
+        }
+        let pc = sim.value(net("PC")).unwrap().clone();
+        sim.advance(5000).unwrap();
+        assert_eq!(sim.value(net("PC")), Some(&pc));
+        assert_eq!(sim.value(net("TX_COUNT")).unwrap().to_u64(), Some(3));
+        assert!(
+            sim.discovered_signals()
+                .iter()
+                .any(|signal| signal.path.contains("cpu.datapath.alu_result"))
+        );
+    }
+}

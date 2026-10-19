@@ -8,6 +8,9 @@ Open…**.
 
 ![LC-3 root schematic and reusable modules](../images/lc3.png)
 
+For a second implementation with HDL base modules, see
+[LC-3 with HDL modules](lc3-hdl.md).
+
 ## Explore the computer
 
 The computer uses a microcoded control circuit, registers, multiplexers, logic

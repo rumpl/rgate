@@ -58,6 +58,7 @@ nav:
       - Overview: examples/README.md
       - Verilog LED chaser: examples/led-chaser.md
       - LC-3 computer: examples/lc3.md
+      - LC-3 with HDL modules: examples/lc3-hdl.md
       - Tiny VGA controller: examples/tiny-vga.md
   - Reference:
       - Shortcuts: reference/shortcuts.md
