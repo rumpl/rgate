@@ -1,4 +1,4 @@
-use crate::theme::Theme;
+use crate::theme::{Appearance, Theme};
 use gpui::{App, KeyBinding, Menu, MenuItem, SystemMenuType, actions};
 use rgate_core::{Direction, GateKind};
 use rgate_editor::Tool;
@@ -29,7 +29,8 @@ actions!(
         Fit,
         ClassicTheme,
         ModernTheme,
-        DarkTheme,
+        LightAppearance,
+        DarkAppearance,
         ToggleGrid,
         ToggleSnap,
         ToggleScope,
@@ -65,6 +66,7 @@ pub enum Command {
     Zoom(f32),
     Fit,
     SetTheme(Theme),
+    SetAppearance(Appearance),
     ToggleGrid,
     ToggleSnap,
     ToggleScope,
@@ -86,8 +88,6 @@ pub enum Command {
     Help,
     Quit,
     Tool(Tool),
-    #[cfg_attr(not(test), allow(dead_code))]
-    Example(&'static str),
     Port(Option<Direction>),
 }
 
@@ -185,9 +185,11 @@ pub fn entries(menu: &str) -> Vec<MenuEntry> {
             E::item("Waveform / messages", "", C::ToggleScope),
         ],
         "View" => vec![
-            E::item("Theme: Classic (TkGate)", "", C::SetTheme(Theme::Classic)),
-            E::item("Theme: Modern", "", C::SetTheme(Theme::Modern)),
-            E::item("Theme: Dark", "", C::SetTheme(Theme::Dark)),
+            E::item("Light appearance", "", C::SetAppearance(Appearance::Light)),
+            E::item("Dark appearance", "", C::SetAppearance(Appearance::Dark)),
+            E::separator(),
+            E::item("Canvas: Classic (TkGate)", "", C::SetTheme(Theme::Classic)),
+            E::item("Canvas: Modern", "", C::SetTheme(Theme::Modern)),
             E::separator(),
             E::item("Show grid", "G", C::ToggleGrid),
             E::item("Snap to grid", "", C::ToggleSnap),
@@ -353,9 +355,11 @@ pub fn install(cx: &mut App) {
             disabled: false,
             name: "View".into(),
             items: vec![
-                MenuItem::action("Theme: Classic (TkGate)", ClassicTheme),
-                MenuItem::action("Theme: Modern", ModernTheme),
-                MenuItem::action("Theme: Dark", DarkTheme),
+                MenuItem::action("Light Appearance", LightAppearance),
+                MenuItem::action("Dark Appearance", DarkAppearance),
+                MenuItem::separator(),
+                MenuItem::action("Canvas: Classic (TkGate)", ClassicTheme),
+                MenuItem::action("Canvas: Modern", ModernTheme),
                 MenuItem::separator(),
                 MenuItem::action("Zoom In", ZoomIn),
                 MenuItem::action("Zoom Out", ZoomOut),

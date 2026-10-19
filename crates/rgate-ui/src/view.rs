@@ -1,397 +1,502 @@
 use crate::{
-    app::{Dialog, Drag, GateApp, Popup, WorkspaceTab},
+    app::{ContextMenu, GateApp, WorkspaceTab},
     canvas,
-    commands::{self, Command},
+    commands::{self, Command, MenuEntry},
+    theme::{Appearance, Theme},
 };
 use gpui::{
-    AnyElement, Context, CursorStyle, FontWeight, MouseButton, SharedString, Window, anchored,
-    canvas as drawing, div, point, prelude::*, px, rgb,
+    AnyElement, App, AppContext, Context, CursorStyle, DismissEvent, Entity, Focusable, FontWeight,
+    MouseButton, Pixels, SharedString, WeakEntity, Window, anchored, canvas as drawing, deferred,
+    div, prelude::*, px, rgb,
 };
+use gpui_component::{
+    ActiveTheme, Icon, Selectable as _, Sizable as _, Theme as KitTheme, ThemeMode,
+    button::{Button, ButtonVariants as _},
+    h_flex,
+    input::Textarea,
+    label::Label,
+    list::ListItem,
+    menu::{DropdownMenu as _, PopupMenu, PopupMenuItem},
+    resizable::{ResizableState, h_resizable, resizable_panel, v_resizable},
+    scroll::ScrollableElement as _,
+    separator::Separator,
+    status_bar::StatusBar,
+    tab::{Tab, TabBar},
+    toolbar::{Toolbar, ToolbarGroup},
+    v_flex,
+};
+use gpui_kit_assets::IconName;
 use rgate_core::{Direction, GateKind, Point};
 use rgate_editor::Tool;
 
-impl GateApp {
-    fn themed_icon(&self, name: &str) -> AnyElement {
-        match self.theme {
-            crate::theme::Theme::Classic => crate::classic_icons::icon(name, 16.0),
-            crate::theme::Theme::Modern | crate::theme::Theme::Dark => {
-                crate::icons::icon(name, self.theme.palette(), 16.0)
-            }
+const MENUS: [&str; 9] = [
+    "File", "Edit", "View", "Tool", "Simulate", "Module", "Gate", "Arrange", "Help",
+];
+const MESSAGE_HISTORY: usize = 30;
+
+/// Persistent split state for the main window panes.
+pub struct PanelLayout {
+    main: Entity<ResizableState>,
+    sidebar: Entity<ResizableState>,
+    center: Entity<ResizableState>,
+    extents: [Pixels; 3],
+}
+
+impl PanelLayout {
+    pub fn new(cx: &mut App) -> Self {
+        Self {
+            main: cx.new(|_| ResizableState::default()),
+            sidebar: cx.new(|_| ResizableState::default()),
+            center: cx.new(|_| ResizableState::default()),
+            extents: [Pixels::ZERO; 3],
         }
     }
 
-    fn themed_logo(&self, dimension: f32) -> AnyElement {
-        crate::icons::icon("gatelogo", self.theme.palette(), dimension)
+    /// GPUI Kit rescales every pane proportionally when its container changes size.
+    /// Side panes should keep their chosen size instead, leaving the canvas to absorb
+    /// the difference (this matters most on the web, where the canvas grows after startup).
+    fn keep_side_panes(&mut self, sizes: [&[(usize, f32)]; 3], window: &mut Window, cx: &mut App) {
+        let states = [&self.main, &self.sidebar, &self.center];
+        for ((state, extent), fixed) in states.into_iter().zip(&mut self.extents).zip(sizes) {
+            let current = state.read(cx).container_size();
+            if current == *extent || current <= Pixels::ZERO {
+                continue;
+            }
+            *extent = current;
+            state.update(cx, |state, cx| {
+                for &(index, size) in fixed {
+                    if state
+                        .sizes()
+                        .get(index)
+                        .is_some_and(|actual| *actual != px(size))
+                    {
+                        state.resize_panel(index, px(size), window, cx);
+                    }
+                }
+            });
+        }
+    }
+}
+
+pub fn apply_appearance(appearance: Appearance, window: Option<&mut Window>, cx: &mut App) {
+    let mode = if appearance.is_dark() {
+        ThemeMode::Dark
+    } else {
+        ThemeMode::Light
+    };
+    KitTheme::change(mode, window, cx);
+    // The web platform has no system fonts, only the families bundled at startup.
+    if cfg!(target_family = "wasm") {
+        let theme = KitTheme::global_mut(cx);
+        theme.font_family = "IBM Plex Sans".into();
+        theme.mono_font_family = "Lilex".into();
+    }
+}
+
+pub fn mono_font() -> &'static str {
+    if cfg!(target_family = "wasm") {
+        "Lilex"
+    } else {
+        "Menlo"
+    }
+}
+
+/// Which View-menu entries currently carry a check mark.
+#[derive(Clone, Copy)]
+struct MenuChecks {
+    theme: Theme,
+    appearance: Appearance,
+    grid: bool,
+    snap: bool,
+}
+
+impl MenuChecks {
+    fn checked(self, command: &Command) -> bool {
+        match command {
+            Command::SetTheme(theme) => *theme == self.theme,
+            Command::SetAppearance(appearance) => *appearance == self.appearance,
+            Command::ToggleGrid => self.grid,
+            Command::ToggleSnap => self.snap,
+            _ => false,
+        }
+    }
+}
+
+fn menu_items(
+    mut menu: PopupMenu,
+    entries: Vec<MenuEntry>,
+    app: WeakEntity<GateApp>,
+    checks: Option<MenuChecks>,
+) -> PopupMenu {
+    for entry in entries {
+        let Some(command) = entry.command else {
+            menu = menu.separator();
+            continue;
+        };
+        let checked = checks.is_some_and(|checks| checks.checked(&command));
+        let (label, shortcut) = (entry.label, entry.shortcut);
+        let app = app.clone();
+        menu = menu.item(
+            PopupMenuItem::element(move |_, cx| {
+                h_flex()
+                    .w_full()
+                    .gap_6()
+                    .justify_between()
+                    .child(label)
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(shortcut),
+                    )
+            })
+            .checked(checked)
+            .on_click(move |_, window, cx| {
+                if let Err(error) =
+                    app.update(cx, |this, cx| this.command(command.clone(), window, cx))
+                {
+                    eprintln!("menu command ignored after window closed: {error}");
+                }
+            }),
+        );
+    }
+    menu
+}
+
+impl GateApp {
+    fn menu_checks(&self) -> MenuChecks {
+        MenuChecks {
+            theme: self.theme,
+            appearance: self.appearance,
+            grid: self.editor.show_grid,
+            snap: self.editor.snap,
+        }
     }
 
     pub(super) fn button(
         &self,
         id: impl Into<SharedString>,
-        label: impl Into<String>,
+        label: impl Into<SharedString>,
         command: Command,
         active: bool,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
-        div()
-            .id(id.into())
-            .flex()
-            .items_center()
-            .justify_center()
-            .px(px(9.0))
-            .h(px(25.0))
-            .rounded(px(self.theme.palette().radius))
-            .bg(rgb(if active {
-                self.theme.palette().accent
-            } else {
-                self.theme.palette().chrome
-            }))
-            .border_1()
-            .border_color(rgb(if active {
-                self.theme.palette().shadow
-            } else {
-                self.theme.palette().light
-            }))
-            .hover(|style| {
-                style
-                    .bg(rgb(self.theme.palette().hover))
-                    .border_color(rgb(self.theme.palette().shadow))
-            })
-            .cursor_pointer()
-            .child(label.into())
+    ) -> Button {
+        Button::new(id.into())
+            .small()
+            .label(label)
+            .selected(active)
             .on_click(
                 cx.listener(move |this, _, window, cx| this.command(command.clone(), window, cx)),
             )
-            .into_any_element()
     }
 
-    fn release_reset_button(&self, id: &'static str, cx: &mut Context<Self>) -> AnyElement {
-        let palette = self.theme.palette();
-        div()
-            .flex()
-            .child(
-                div()
-                    .id(id)
-                    .debug_selector(move || id.into())
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .h(px(30.0))
-                    .px(px(12.0))
-                    .rounded(px(palette.radius))
-                    .bg(rgb(palette.accent))
-                    .text_color(rgb(palette.text))
-                    .border_1()
-                    .border_color(rgb(palette.shadow))
-                    .hover(|style| style.bg(rgb(palette.hover)).border_color(rgb(palette.gate)))
-                    .active(|style| style.bg(rgb(palette.selection)))
-                    .cursor_pointer()
-                    .child("Release reset (RESET_N → 1)")
-                    .on_click(cx.listener(|this, _, _, cx| this.release_terminal_reset(cx))),
-            )
-            .into_any_element()
+    pub(super) fn release_reset_button(&self, id: &'static str, cx: &mut Context<Self>) -> Button {
+        Button::new(id)
+            .small()
+            .primary()
+            .label("Release reset (RESET_N → 1)")
+            .on_click(cx.listener(|this, _, _, cx| this.release_terminal_reset(cx)))
     }
 
-    fn icon_button(
+    fn tool_button(
         &self,
-        icon: &'static str,
-        label: &'static str,
+        id: &'static str,
+        icon: IconName,
+        tooltip: &'static str,
         command: Command,
         active: bool,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
-        div()
-            .id(SharedString::from(format!("tool-{icon}")))
-            .w(px(27.0))
-            .h(px(27.0))
-            .rounded(px(self.theme.palette().radius))
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgb(if active {
-                self.theme.palette().accent
-            } else {
-                self.theme.palette().chrome
-            }))
-            .border_1()
-            .border_color(rgb(if active {
-                self.theme.palette().shadow
-            } else {
-                self.theme.palette().chrome
-            }))
-            .hover(|style| {
-                style
-                    .bg(rgb(self.theme.palette().hover))
-                    .border_color(rgb(self.theme.palette().shadow))
-            })
-            .cursor_pointer()
-            .child(self.themed_icon(icon))
-            .on_mouse_move(cx.listener(move |this, _, _, cx| {
-                if this.drag.is_none() && this.status != label {
-                    this.status = label.into();
-                    cx.notify();
-                }
-            }))
+    ) -> Button {
+        Button::new(id)
+            .icon(icon)
+            .tooltip(tooltip)
+            .selected(active)
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.focus.focus(window, cx);
                 this.command(command.clone(), window, cx);
             }))
-            .into_any_element()
-    }
-
-    fn separator(&self) -> AnyElement {
-        div()
-            .w(px(2.0))
-            .h(px(22.0))
-            .mx(px(5.0))
-            .bg(rgb(self.theme.palette().shadow))
-            .border_r_1()
-            .border_color(rgb(self.theme.palette().light))
-            .into_any_element()
     }
 
     fn menu_bar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let entity = cx.entity().downgrade();
-        let mut menus = div()
-            .flex()
-            .items_center()
-            .gap(px(2.0))
-            .h(px(27.0))
-            .px(px(3.0))
-            .flex_none();
-        for (index, name) in [
-            "File", "Edit", "View", "Tool", "Simulate", "Module", "Gate", "Arrange", "Help",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let active = self.popup.as_ref().is_some_and(|popup| popup.menu == name);
+        let app = cx.weak_entity();
+        let checks = self.menu_checks();
+        let mut menus = h_flex().gap_0p5();
+        for name in MENUS {
+            let app = app.clone();
             menus = menus.child(
-                div()
-                    .id(SharedString::from(format!("menu-{name}")))
-                    .debug_selector(|| format!("menu-{name}"))
-                    .h(px(24.0))
-                    .px(px(8.0))
-                    .flex()
-                    .items_center()
-                    .bg(rgb(if active {
-                        self.theme.palette().accent
-                    } else {
-                        self.theme.palette().chrome
-                    }))
-                    .hover(|style| style.bg(rgb(self.theme.palette().light)))
-                    .cursor_pointer()
-                    .child(name)
-                    .on_mouse_move(cx.listener(move |this, _, _, cx| {
-                        if this
-                            .popup
-                            .as_ref()
-                            .is_some_and(|popup| popup.menu != name && popup.menu != "Canvas")
-                            && let Some(bounds) = this.menu_bounds.get(index)
-                        {
-                            this.popup = Some(Popup {
-                                menu: name.into(),
-                                position: Point::new(
-                                    f32::from(bounds.left()),
-                                    f32::from(bounds.bottom()),
-                                ),
-                            });
-                            cx.notify();
-                        }
-                    }))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.focus.focus(window, cx);
-                        this.popup = if this.popup.as_ref().is_some_and(|popup| popup.menu == name)
-                        {
-                            None
-                        } else {
-                            Some(Popup {
-                                menu: name.into(),
-                                position: this.menu_bounds.get(index).map_or(
-                                    Point::ZERO,
-                                    |bounds| {
-                                        Point::new(
-                                            f32::from(bounds.left()),
-                                            f32::from(bounds.bottom()),
-                                        )
-                                    },
-                                ),
-                            })
-                        };
-                        cx.notify();
-                    })),
+                Button::new(SharedString::from(format!("menu-{name}")))
+                    .ghost()
+                    .xsmall()
+                    .label(name)
+                    .dropdown_menu(move |menu, _, _| {
+                        menu_items(
+                            menu.min_w(px(240.0)),
+                            commands::entries(name),
+                            app.clone(),
+                            Some(checks),
+                        )
+                    }),
             );
         }
-        menus
-            .on_children_prepainted(move |bounds, _, cx| {
-                if let Err(error) = entity.update(cx, |this, _| {
-                    this.menu_bounds = bounds.into_iter().take(9).collect();
-                }) {
-                    eprintln!("menu layout update failed: {error}");
-                }
-            })
+        let theme = cx.theme();
+        h_flex()
+            .h(px(32.0))
+            .px_2()
+            .flex_none()
+            .bg(theme.title_bar)
+            .border_b_1()
+            .border_color(theme.title_bar_border)
+            .child(menus)
             .child(div().flex_1())
             .child(
-                div()
-                    .text_size(px(11.0))
-                    .text_color(rgb(self.theme.palette().muted))
-                    .mr(px(12.0))
-                    .child("RGate 0.1 · Rust / GPUI"),
+                Label::new("RGate 0.1 · Rust / GPUI Kit")
+                    .text_xs()
+                    .text_color(theme.muted_foreground),
             )
             .into_any_element()
     }
 
     fn toolbar(&self, cx: &mut Context<Self>) -> AnyElement {
         use Command as C;
-        let mode = &self.editor.tool;
-        div()
-            .flex()
-            .items_center()
-            .h(px(37.0))
-            .px(px(7.0))
-            .border_t_1()
-            .border_b_1()
-            .border_color(rgb(self.theme.palette().shadow))
-            .flex_none()
-            .child(self.icon_button("file_new", "New circuit (⌘N)", C::New, false, cx))
-            .child(self.icon_button(
-                "file_open",
+        let tool = self.editor.tool.clone();
+        let file = ToolbarGroup::new("toolbar-file")
+            .label("File")
+            .child(self.tool_button(
+                "tool-new",
+                IconName::FilePlus,
+                "New circuit (⌘N)",
+                C::New,
+                false,
+                cx,
+            ))
+            .child(self.tool_button(
+                "tool-open",
+                IconName::FolderOpen,
                 "Open TkGate .v / RGate circuit (⌘O)",
                 C::Open,
                 false,
                 cx,
             ))
-            .child(self.icon_button("file_save", "Save circuit (⌘S)", C::Save, false, cx))
-            .child(self.icon_button(
-                "file_saveas",
+            .child(self.tool_button(
+                "tool-save",
+                IconName::Save,
+                "Save circuit (⌘S)",
+                C::Save,
+                false,
+                cx,
+            ))
+            .child(self.tool_button(
+                "tool-save-as",
+                IconName::SaveAll,
                 "Save circuit as… (⇧⌘S)",
                 C::SaveAs,
                 false,
                 cx,
             ))
-            .child(self.icon_button(
-                "sim_dump",
+            .child(self.tool_button(
+                "tool-export",
+                IconName::FileCode,
                 "Export Verilog with lossless layout metadata",
                 C::Export,
                 false,
                 cx,
+            ));
+        let history = ToolbarGroup::new("toolbar-history")
+            .label("History")
+            .child(self.tool_button(
+                "tool-undo",
+                IconName::Undo2,
+                "Undo (⌘Z)",
+                C::Undo,
+                false,
+                cx,
             ))
-            .child(self.separator())
-            .child(self.icon_button("back", "Undo (⌘Z)", C::Undo, false, cx))
-            .child(self.icon_button("forward", "Redo (⇧⌘Z)", C::Redo, false, cx))
-            .child(self.separator())
-            .child(self.icon_button(
-                "edit_cut",
+            .child(self.tool_button(
+                "tool-redo",
+                IconName::Redo2,
+                "Redo (⇧⌘Z)",
+                C::Redo,
+                false,
+                cx,
+            ));
+        let clipboard = ToolbarGroup::new("toolbar-clipboard")
+            .label("Clipboard")
+            .child(self.tool_button(
+                "tool-cut",
+                IconName::Scissors,
                 "Cut selected components (⌘X)",
                 C::Cut,
                 false,
                 cx,
             ))
-            .child(self.icon_button(
-                "edit_copy",
+            .child(self.tool_button(
+                "tool-copy",
+                IconName::Copy,
                 "Copy selected components (⌘C)",
                 C::Copy,
                 false,
                 cx,
             ))
-            .child(self.icon_button("edit_paste", "Paste components (⌘V)", C::Paste, false, cx))
-            .child(self.separator())
-            .child(self.icon_button(
-                "mov_curs",
+            .child(self.tool_button(
+                "tool-paste",
+                IconName::ClipboardPaste,
+                "Paste components (⌘V)",
+                C::Paste,
+                false,
+                cx,
+            ));
+        let tools = ToolbarGroup::new("toolbar-tools")
+            .label("Tools")
+            .child(self.tool_button(
+                "tool-select",
+                IconName::MousePointer2,
                 "Select / move (V)",
                 C::Tool(Tool::Select),
-                *mode == Tool::Select,
+                tool == Tool::Select,
                 cx,
             ))
-            .child(self.icon_button(
-                "net_wire",
+            .child(self.tool_button(
+                "tool-wire",
+                IconName::Spline,
                 "Connect pins with orthogonal wires (W)",
                 C::Tool(Tool::Wire),
-                *mode == Tool::Wire,
+                tool == Tool::Wire,
                 cx,
             ))
-            .child(self.icon_button(
-                "scroll_curs",
+            .child(self.tool_button(
+                "tool-pan",
+                IconName::Hand,
                 "Scroll / pan canvas (P)",
                 C::Tool(Tool::Pan),
-                *mode == Tool::Pan,
+                tool == Tool::Pan,
                 cx,
             ))
-            .child(self.icon_button(
-                "cut_curs",
+            .child(self.tool_button(
+                "tool-delete",
+                IconName::Eraser,
                 "Cut wire / delete gate (D)",
                 C::Tool(Tool::Delete),
-                *mode == Tool::Delete,
+                tool == Tool::Delete,
                 cx,
-            ))
-            .child(self.separator())
-            .child(self.icon_button(
-                "edit_rotate",
+            ));
+        let gate = ToolbarGroup::new("toolbar-gate")
+            .label("Gate")
+            .child(self.tool_button(
+                "tool-rotate",
+                IconName::RotateCw,
                 "Rotate clockwise (R)",
                 C::Rotate(true),
                 false,
                 cx,
             ))
-            .child(self.icon_button(
-                "edit_brotate",
+            .child(self.tool_button(
+                "tool-rotate-back",
+                IconName::RotateCcw,
                 "Rotate counterclockwise (⇧R)",
                 C::Rotate(false),
                 false,
                 cx,
             ))
-            .child(self.icon_button(
-                "gateprops",
+            .child(self.tool_button(
+                "tool-properties",
+                IconName::SlidersHorizontal,
                 "Gate properties (Enter)",
                 C::Properties,
                 false,
                 cx,
-            ))
-            .child(self.separator())
-            .child(self.icon_button(
-                "sim_go",
+            ));
+        let simulate = ToolbarGroup::new("toolbar-simulate")
+            .label("Simulation")
+            .child(self.tool_button(
+                "tool-run",
+                IconName::Play,
                 "Run / pause simulation (Space)",
                 C::PlayPause,
                 self.running,
                 cx,
             ))
-            .child(self.icon_button(
-                "sim_pause",
+            .child(self.tool_button(
+                "tool-pause",
+                IconName::Pause,
                 "Pause / resume simulation (Space)",
                 C::PlayPause,
                 self.simulation.is_some() && !self.running,
                 cx,
             ))
-            .child(self.icon_button("sim_stop", "Stop simulation", C::Stop, false, cx))
-            .child(self.icon_button(
-                "sim_step",
+            .child(self.tool_button(
+                "tool-stop",
+                IconName::Square,
+                "Stop simulation",
+                C::Stop,
+                false,
+                cx,
+            ))
+            .child(self.tool_button(
+                "tool-step",
+                IconName::StepForward,
                 "Step one simulation event (F6)",
                 C::Step,
                 false,
                 cx,
             ))
-            .child(self.icon_button(
-                "sim_clock",
+            .child(self.tool_button(
+                "tool-clock",
+                IconName::Timer,
                 "Advance one clock cycle (Tab)",
                 C::ClockStep,
                 false,
                 cx,
+            ));
+        let view = ToolbarGroup::new("toolbar-view")
+            .label("View")
+            .child(self.tool_button(
+                "tool-zoom-in",
+                IconName::ZoomIn,
+                "Zoom in (+)",
+                C::Zoom(1.25),
+                false,
+                cx,
             ))
-            .child(self.separator())
-            .child(self.icon_button("zoom_in", "Zoom in (+)", C::Zoom(1.25), false, cx))
-            .child(self.icon_button("zoom_out", "Zoom out (−)", C::Zoom(0.8), false, cx))
-            .child(self.button("fit", "Fit", C::Fit, false, cx))
-            .child(div().flex_1())
-            .child(div().mr(px(3.0)).child(self.themed_logo(35.0)))
+            .child(self.tool_button(
+                "tool-zoom-out",
+                IconName::ZoomOut,
+                "Zoom out (−)",
+                C::Zoom(0.8),
+                false,
+                cx,
+            ))
+            .child(self.tool_button(
+                "tool-fit",
+                IconName::Scan,
+                "Fit circuit (⌘0)",
+                C::Fit,
+                false,
+                cx,
+            ));
+        let separator = || Separator::vertical().h(px(18.0)).mx_1();
+        Toolbar::new("main-toolbar")
+            .w_full()
+            .px_2()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(file)
+            .content(separator())
+            .child(history)
+            .content(separator())
+            .child(clipboard)
+            .content(separator())
+            .child(tools)
+            .content(separator())
+            .child(gate)
+            .content(separator())
+            .child(simulate)
+            .content(separator())
+            .child(view)
             .into_any_element()
     }
 
-    fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let sidebar_entity = cx.weak_entity();
-        let mut modules = div()
-            .id("module-list")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .bg(rgb(self.theme.palette().panel));
+    fn modules_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
         let rows = if self.module_list {
             self.editor
                 .circuit()
@@ -410,110 +515,134 @@ impl GateApp {
                 .circuit()
                 .hierarchy_rows(&self.collapsed_modules)
         };
+        let mut list = v_flex().id("module-list").flex_1().min_h_0().p_1();
         for row in rows {
             let name = row.module.clone();
-            let path = row.path.clone();
             let active = if self.simulation.is_some() {
                 self.debug_path.as_deref() == Some(row.path.as_str())
             } else {
                 row.module == self.editor.active_module()
             };
-            let navigate_path = row.path.clone();
-            let expanded = !self.collapsed_modules.contains(&row.path);
-            let mut item = div()
-                .id(SharedString::from(format!("hierarchy-{}", row.path)))
-                .debug_selector(|| format!("module-{}", row.module))
-                .h(px(25.0))
-                .flex_none()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .flex()
-                .items_center()
-                .gap(px(5.0))
-                .pl(px(4.0 + row.depth as f32 * 14.0))
-                .pr(px(4.0))
-                .bg(rgb(if active {
-                    self.theme.palette().selection
-                } else {
-                    self.theme.palette().panel
-                }))
-                .hover(|style| style.bg(rgb(self.theme.palette().hover)))
-                .cursor_pointer();
-            if row.has_children {
-                item = item.child(
-                    div()
-                        .id(SharedString::from(format!("expand-{}", row.path)))
-                        .debug_selector(|| format!("expand-{}", row.path))
-                        .w(px(12.0))
-                        .flex_none()
-                        .child(if expanded { "▾" } else { "▸" })
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if !this.collapsed_modules.remove(&path) {
-                                this.collapsed_modules.insert(path.clone());
-                            }
-                            cx.stop_propagation();
-                            cx.notify();
-                        })),
-                );
+            let expander = if row.has_children {
+                let path = row.path.clone();
+                let expanded = !self.collapsed_modules.contains(&row.path);
+                Button::new(SharedString::from(format!("expand-{}", row.path)))
+                    .ghost()
+                    .xsmall()
+                    .icon(if expanded {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if !this.collapsed_modules.remove(&path) {
+                            this.collapsed_modules.insert(path.clone());
+                        }
+                        cx.stop_propagation();
+                        cx.notify();
+                    }))
+                    .into_any_element()
             } else {
-                item = item.child(div().w(px(12.0)).flex_none().child("·"));
-            }
-            item = item
-                .child(self.themed_icon(if row.path == self.editor.circuit().root {
-                    "module_root"
-                } else {
-                    "mod_net"
-                }))
+                div().size(px(20.0)).flex_none().into_any_element()
+            };
+            let mut content = h_flex()
+                .w_full()
+                .min_w_0()
+                .gap_1()
+                .child(expander)
                 .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .h(px(25.0))
-                        .flex()
-                        .items_center()
-                        .truncate()
-                        .child(row.label),
-                );
+                    Icon::new(if row.path == self.editor.circuit().root {
+                        IconName::Cpu
+                    } else {
+                        IconName::Box
+                    })
+                    .small()
+                    .text_color(muted),
+                )
+                .child(div().flex_1().min_w_0().truncate().child(row.label));
             if row.module != self.editor.active_module() {
-                item = item.child(
-                    div()
-                        .id(SharedString::from(format!("instantiate-{}", row.path)))
-                        .debug_selector(|| format!("instantiate-{}", row.path))
-                        .w(px(22.0))
-                        .flex_none()
-                        .child(if cfg!(target_family = "wasm") {
-                            "+"
-                        } else {
-                            "＋"
-                        })
-                        .on_click(cx.listener({
-                            let name = name.clone();
-                            move |this, _, window, cx| {
-                                this.command(
-                                    Command::Tool(Tool::Place(GateKind::Module(name.clone()))),
-                                    window,
-                                    cx,
-                                );
-                                cx.stop_propagation();
-                            }
+                let name = name.clone();
+                content = content.child(
+                    Button::new(SharedString::from(format!("instantiate-{}", row.path)))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Plus)
+                        .tooltip("Place an instance of this module")
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.command(
+                                Command::Tool(Tool::Place(GateKind::Module(name.clone()))),
+                                window,
+                                cx,
+                            );
+                            cx.stop_propagation();
                         })),
                 );
             }
-            item = item.on_click(cx.listener(move |this, _, _, cx| {
-                if this.module_list {
-                    this.switch_module(name.clone(), cx)
-                } else {
-                    this.navigate_scope(navigate_path.clone(), name.clone(), cx)
-                }
-            }));
-            modules = modules.child(item);
+            let navigate_path = row.path.clone();
+            list = list.child(
+                ListItem::new(SharedString::from(format!("hierarchy-{}", row.path)))
+                    .text_sm()
+                    .selected(active)
+                    .py_0p5()
+                    .pl(px(4.0 + row.depth as f32 * 14.0))
+                    .child(content)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if this.module_list {
+                            this.switch_module(name.clone(), cx)
+                        } else {
+                            this.navigate_scope(navigate_path.clone(), name.clone(), cx)
+                        }
+                    })),
+            );
         }
-        let mut nets = div()
-            .id("net-list")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .bg(rgb(self.theme.palette().panel));
+        v_flex()
+            .size_full()
+            .child(
+                h_flex()
+                    .h(px(34.0))
+                    .flex_none()
+                    .px_2()
+                    .gap_1()
+                    .border_b_1()
+                    .border_color(cx.theme().sidebar_border)
+                    .child(
+                        div()
+                            .flex_1()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Modules"),
+                    )
+                    .child(
+                        Button::new("modules-tree")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::ListTree)
+                            .tooltip("Instance hierarchy")
+                            .selected(!self.module_list)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.module_list = false;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("modules-flat")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::List)
+                            .tooltip("Module definitions")
+                            .selected(self.module_list)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.module_list = true;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(list.overflow_y_scrollbar())
+            .into_any_element()
+    }
+
+    fn nets_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let (muted, border) = (theme.muted_foreground, theme.sidebar_border);
         let mut definitions = self
             .editor
             .module()
@@ -522,76 +651,69 @@ impl GateApp {
             .filter(|net| !self.nets_ports || net.port.is_some())
             .collect::<Vec<_>>();
         definitions.sort_by(|a, b| a.name.cmp(&b.name));
+        let mut list = v_flex().id("net-list").flex_1().min_h_0().p_1();
         for net in definitions {
             let id = net.id;
-            let selected = self.editor.selected_net == Some(id);
             let value = self
                 .displayed_value(id)
                 .map(ToString::to_string)
                 .unwrap_or_else(|| "—".into());
             let color = self
                 .displayed_value(id)
-                .map(|value| self.theme.palette().signal_color(value))
-                .unwrap_or_else(|| rgb(self.theme.palette().muted).into());
+                .map(|value| self.palette().signal_color(value))
+                .unwrap_or(muted);
             let name = if net.width > 1 {
                 format!("{} [{}:0]", net.name, net.width - 1)
             } else {
                 net.name.clone()
             };
-            nets = nets.child(
-                div()
-                    .id(SharedString::from(format!("net-{}", id.0)))
-                    .h(px(24.0))
-                    .flex()
-                    .items_center()
-                    .px(px(4.0))
-                    .gap(px(4.0))
-                    .bg(rgb(if selected {
-                        self.theme.palette().selection
-                    } else {
-                        self.theme.palette().panel
-                    }))
-                    .hover(|style| style.bg(rgb(self.theme.palette().hover)))
-                    .cursor_pointer()
-                    .child(self.themed_icon(if net.port == Some(Direction::Output) {
-                        "output"
-                    } else {
-                        "net_wire"
-                    }))
+            let probed = self.is_probed(id);
+            list = list.child(
+                ListItem::new(SharedString::from(format!("net-{}", id.0)))
+                    .selected(self.editor.selected_net == Some(id))
+                    .py_0p5()
                     .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .text_size(px(11.0))
-                            .child(name),
-                    )
-                    .child(
-                        div()
-                            .text_color(color)
-                            .font_family(if cfg!(target_family = "wasm") {
-                                "Lilex"
-                            } else {
-                                "Menlo"
-                            })
-                            .text_size(px(10.0))
-                            .child(value),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("probe-{}", id.0)))
-                            .w(px(20.0))
-                            .flex()
-                            .justify_center()
-                            .text_color(rgb(if self.is_probed(id) {
-                                self.theme.palette().selected_wire
-                            } else {
-                                self.theme.palette().muted
-                            }))
-                            .child(if self.is_probed(id) { "●" } else { "○" })
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.toggle_probe(id, cx);
-                                cx.stop_propagation();
-                            })),
+                        h_flex()
+                            .w_full()
+                            .min_w_0()
+                            .gap_1p5()
+                            .child(
+                                Icon::new(if net.port == Some(Direction::Output) {
+                                    IconName::ArrowRight
+                                } else {
+                                    IconName::Spline
+                                })
+                                .small()
+                                .text_color(muted),
+                            )
+                            .child(div().flex_1().min_w_0().truncate().text_xs().child(name))
+                            .child(
+                                div()
+                                    .text_color(color)
+                                    .font_family(mono_font())
+                                    .text_xs()
+                                    .child(value),
+                            )
+                            .child(
+                                Button::new(SharedString::from(format!("probe-{}", id.0)))
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(if probed {
+                                        IconName::CircleDot
+                                    } else {
+                                        IconName::Circle
+                                    })
+                                    .tooltip(if probed {
+                                        "Remove waveform probe"
+                                    } else {
+                                        "Add waveform probe"
+                                    })
+                                    .selected(probed)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.toggle_probe(id, cx);
+                                        cx.stop_propagation();
+                                    })),
+                            ),
                     )
                     .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                         this.editor.selected_net = Some(id);
@@ -604,14 +726,11 @@ impl GateApp {
                     })),
             );
         }
-        if !self.nets_ports && self.editor.module().nets.is_empty() {
-            nets = nets.child(
-                div().id("nets-empty").debug_selector(|| "nets-empty".into())
-                    .p(px(10.0)).text_color(rgb(self.theme.palette().muted)).text_size(px(11.0))
-                    .child("No nets yet. Placing gates does not create nets. Press W, then connect two pins to add a net here."),
-            );
-        }
-        if self.nets_ports
+        let empty_hint = if !self.nets_ports && self.editor.module().nets.is_empty() {
+            Some(
+                "No nets yet. Placing gates does not create nets. Press W, then connect two pins to add a net here.",
+            )
+        } else if self.nets_ports
             && self
                 .editor
                 .module()
@@ -619,261 +738,91 @@ impl GateApp {
                 .iter()
                 .all(|net| net.port.is_none())
         {
-            nets = nets.child(div().p(px(10.0)).text_color(rgb(self.theme.palette().muted)).text_size(px(11.0)).child("No ports. Select a net in the Interface tab to expose it as an input or output."));
+            Some("No ports. Select a net in the Interface tab to expose it as an input or output.")
+        } else {
+            None
+        };
+        if let Some(hint) = empty_hint {
+            list = list.child(div().p_2().text_xs().text_color(muted).child(hint));
         }
-        div()
-            .w(px(self.sidebar_width))
-            .flex_none()
-            .flex()
-            .flex_col()
-            .gap_0()
-            .min_h_0()
-            .on_children_prepainted(move |bounds, _, cx| {
-                if let Err(error) = sidebar_entity.update(cx, |this, _| {
-                    if let Some(first) = bounds.first()
-                        && let Some(last) = bounds.last()
-                    {
-                        this.sidebar_bounds =
-                            gpui::Bounds::from_corners(first.origin, last.bottom_right());
-                    }
-                }) {
-                    eprintln!("sidebar layout: {error}");
+        v_flex()
+            .size_full()
+            .child(
+                h_flex().h(px(34.0)).flex_none().px_2().child(
+                    TabBar::new("nets-tabs")
+                        .segmented()
+                        .xsmall()
+                        .selected_index(usize::from(self.nets_ports))
+                        .on_click(cx.listener(|this, index: &usize, _, cx| {
+                            this.nets_ports = *index == 1;
+                            cx.notify();
+                        }))
+                        .child(Tab::new().label("Nets"))
+                        .child(Tab::new().label("Ports")),
+                ),
+            )
+            .child(list.overflow_y_scrollbar())
+            .child(
+                div()
+                    .flex_none()
+                    .px_2()
+                    .py_1()
+                    .border_t_1()
+                    .border_color(border)
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!(
+                        "{} nets · click ○ to probe",
+                        self.editor.module().nets.len()
+                    )),
+            )
+            .into_any_element()
+    }
+
+    fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let app = cx.weak_entity();
+        v_resizable("sidebar-split")
+            .with_state(&self.layout.sidebar)
+            .on_resize(move |state, _, cx| {
+                let height = state.read(cx).sizes().first().copied();
+                if let Some(height) = height
+                    && let Err(error) =
+                        app.update(cx, |this, _| this.modules_height = f32::from(height))
+                {
+                    eprintln!("sidebar resize ignored: {error}");
                 }
             })
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .id("modules-panel")
-                    .debug_selector(|| "modules-panel".into())
-                    .h(px(self.modules_height))
-                    .max_h(px(if f32::from(self.sidebar_bounds.size.height) > 0.0 {
-                        (f32::from(self.sidebar_bounds.size.height) - 110.0).max(80.0)
-                    } else {
-                        10000.0
-                    }))
-                    .flex_none()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .border_1()
-                    .border_color(rgb(self.theme.palette().shadow))
-                    .child(
-                        div()
-                            .h(px(28.0))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .bg(rgb(self.theme.palette().chrome))
-                            .child(
-                                div()
-                                    .id("modules-tree")
-                                    .debug_selector(|| "modules-tree".into())
-                                    .h_full()
-                                    .flex_none()
-                                    .w(px(28.0))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .bg(rgb(if !self.module_list {
-                                        self.theme.palette().accent
-                                    } else {
-                                        self.theme.palette().chrome
-                                    }))
-                                    .child(self.themed_icon("modtree"))
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.module_list = false;
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                div()
-                                    .id("modules-flat")
-                                    .debug_selector(|| "modules-flat".into())
-                                    .h_full()
-                                    .flex_none()
-                                    .w(px(28.0))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .bg(rgb(if self.module_list {
-                                        self.theme.palette().accent
-                                    } else {
-                                        self.theme.palette().chrome
-                                    }))
-                                    .child(self.themed_icon("modlist"))
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.module_list = true;
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                div()
-                                    .debug_selector(|| "modules-heading".into())
-                                    .flex_1()
-                                    .h_full()
-                                    .px(px(7.0))
-                                    .flex()
-                                    .items_center()
-                                    .child("Modules"),
-                            ),
-                    )
-                    .child(modules),
+                resizable_panel()
+                    .size(px(self.modules_height))
+                    .size_range(px(80.0)..Pixels::MAX)
+                    .child(self.modules_panel(cx)),
             )
             .child(
-                div()
-                    .id("modules-nets-splitter")
-                    .debug_selector(|| "modules-nets-splitter".into())
-                    .h(px(7.0))
-                    .flex_none()
-                    .cursor(CursorStyle::ResizeUpDown)
-                    .hover(|style| style.bg(rgb(self.theme.palette().shadow)))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
-                            this.drag = Some(Drag::Modules {
-                                start_y: f32::from(event.position.y),
-                                height: this.modules_height,
-                            });
-                            cx.stop_propagation();
-                            cx.notify();
-                        }),
-                    ),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .border_1()
-                    .border_color(rgb(self.theme.palette().shadow))
-                    .child(
-                        div()
-                            .h(px(28.0))
-                            .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .id("nets-tab")
-                                    .h_full()
-                                    .px(px(12.0))
-                                    .flex()
-                                    .items_center()
-                                    .bg(rgb(if !self.nets_ports {
-                                        self.theme.palette().panel
-                                    } else {
-                                        self.theme.palette().chrome
-                                    }))
-                                    .border_r_1()
-                                    .border_color(rgb(self.theme.palette().shadow))
-                                    .cursor_pointer()
-                                    .child("Nets")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.nets_ports = false;
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                div()
-                                    .id("ports-tab")
-                                    .h_full()
-                                    .px(px(12.0))
-                                    .flex()
-                                    .items_center()
-                                    .bg(rgb(if self.nets_ports {
-                                        self.theme.palette().panel
-                                    } else {
-                                        self.theme.palette().chrome
-                                    }))
-                                    .border_r_1()
-                                    .border_color(rgb(self.theme.palette().shadow))
-                                    .cursor_pointer()
-                                    .child("Ports")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.nets_ports = true;
-                                        cx.notify();
-                                    })),
-                            ),
-                    )
-                    .child(nets)
-                    .child(
-                        div()
-                            .h(px(22.0))
-                            .border_t_1()
-                            .border_color(rgb(self.theme.palette().shadow))
-                            .px(px(6.0))
-                            .text_size(px(10.0))
-                            .flex()
-                            .items_center()
-                            .child(format!(
-                                "{} nets · click ○ to probe",
-                                self.editor.module().nets.len()
-                            )),
-                    ),
+                resizable_panel()
+                    .size_range(px(110.0)..Pixels::MAX)
+                    .child(self.nets_panel(cx)),
             )
             .into_any_element()
     }
 
     fn workspace_tabs(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut bar = div()
-            .h(px(31.0))
-            .flex()
-            .items_center()
-            .border_b_1()
-            .border_color(rgb(self.theme.palette().shadow))
-            .flex_none();
-        for (tab, label, icon) in [
-            (WorkspaceTab::Edit, "Edit", "editmode"),
-            (WorkspaceTab::Interface, "Interface", "iface"),
-            (WorkspaceTab::Simulate, "Simulate", "simulate"),
-        ] {
-            bar = bar.child(
-                div()
-                    .id(SharedString::from(format!("workspace-{label}")))
-                    .w(px(142.0))
-                    .h_full()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .px(px(12.0))
-                    .bg(rgb(if self.tab == tab {
-                        self.theme.palette().panel
-                    } else {
-                        self.theme.palette().chrome
-                    }))
-                    .border_r_1()
-                    .border_t_1()
-                    .border_color(rgb(if self.tab == tab {
-                        self.theme.palette().light
-                    } else {
-                        self.theme.palette().shadow
-                    }))
-                    .font_weight(if self.tab == tab {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .hover(|style| style.bg(rgb(self.theme.palette().light)))
-                    .cursor_pointer()
-                    .child(self.themed_icon(icon))
-                    .child(label)
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| this.set_tab(tab, window, cx)),
-                    ),
-            );
-        }
+        const TABS: [WorkspaceTab; 3] = [
+            WorkspaceTab::Edit,
+            WorkspaceTab::Interface,
+            WorkspaceTab::Simulate,
+        ];
+        let muted = cx.theme().muted_foreground;
+        let mut status = h_flex().gap_2().pr_2().text_xs();
         if let Some(path) = &self.debug_path {
             if let Some((parent, _)) = path.rsplit_once('/') {
                 let parent = parent.to_owned();
-                bar = bar.child(
-                    div()
-                        .id("debug-up")
-                        .debug_selector(|| "debug-up".into())
-                        .px(px(8.0))
-                        .cursor_pointer()
-                        .child("↑ Parent")
+                status = status.child(
+                    Button::new("debug-up")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::ArrowUp)
+                        .label("Parent")
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if let Some(name) = this
                                 .simulation
@@ -886,42 +835,61 @@ impl GateApp {
                         })),
                 );
             }
-            bar = bar.child(div().px(px(8.0)).text_size(px(11.0)).child(format!(
-                "Live: {path} · {}",
-                self.simulation.as_ref().unwrap().backend_name()
-            )));
+            if let Some(simulation) = &self.simulation {
+                status = status.child(
+                    div()
+                        .text_color(muted)
+                        .child(format!("Live: {path} · {}", simulation.backend_name())),
+                );
+            }
         }
         #[cfg(feature = "icarus")]
         let compiling = self.compilation.is_some();
         #[cfg(not(feature = "icarus"))]
         let compiling = false;
-        let state = if compiling {
-            "Compiling · Stop cancels"
-        } else if self.running {
-            "Running"
-        } else if self.simulation.is_some() {
-            "Paused"
-        } else {
-            "Edit mode"
-        };
-        if !compiling && self.simulation.is_none() {
-            return bar.child(div().flex_1()).into_any_element();
-        }
-        bar.child(div().flex_1())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .mr(px(9.0))
-                    .text_size(px(11.0))
-                    .child(div().size(px(6.0)).rounded_full().bg(rgb(if self.running {
-                        self.theme.palette().high
+        if compiling || self.simulation.is_some() {
+            let state = if compiling {
+                "Compiling · Stop cancels"
+            } else if self.running {
+                "Running"
+            } else {
+                "Paused"
+            };
+            let theme = cx.theme();
+            status = status.child(
+                h_flex()
+                    .gap_1p5()
+                    .child(div().size(px(6.0)).rounded_full().bg(if self.running {
+                        theme.success
                     } else {
-                        self.theme.palette().muted
-                    })))
+                        theme.muted_foreground
+                    }))
                     .child(state),
+            );
+        }
+        TabBar::new("workspace-tabs")
+            .underline()
+            .small()
+            .selected_index(TABS.iter().position(|tab| *tab == self.tab).unwrap_or(0))
+            .on_click(cx.listener(move |this, index: &usize, window, cx| {
+                this.set_tab(TABS[*index], window, cx)
+            }))
+            .child(
+                Tab::new()
+                    .label("Edit")
+                    .prefix(Icon::new(IconName::Pencil).small()),
             )
+            .child(
+                Tab::new()
+                    .label("Interface")
+                    .prefix(Icon::new(IconName::Plug).small()),
+            )
+            .child(
+                Tab::new()
+                    .label("Simulate")
+                    .prefix(Icon::new(IconName::Activity).small()),
+            )
+            .suffix(status)
             .into_any_element()
     }
 
@@ -935,32 +903,30 @@ impl GateApp {
         let scene = self.scene();
         let entity = cx.entity().downgrade();
         let cursor = match self.editor.tool {
-            Tool::Wire | Tool::Place(_) => CursorStyle::Crosshair,
+            Tool::Wire | Tool::Place(_) | Tool::Delete => CursorStyle::Crosshair,
             Tool::Pan => CursorStyle::OpenHand,
-            Tool::Delete => CursorStyle::Crosshair,
             _ => CursorStyle::Arrow,
         };
         div()
             .id("schematic")
-            .debug_selector(|| "schematic".into())
             .flex_1()
             .size_full()
             .min_h_0()
             .min_w_0()
             .relative()
             .overflow_hidden()
-            .bg(rgb(self.theme.palette().panel))
+            .bg(rgb(self.palette().panel))
             .cursor(cursor)
             .child(
                 drawing(
                     move |bounds, _, cx| match entity.update(cx, |this, _| {
                         let previous_size = this.canvas_bounds.size;
                         this.canvas_bounds = bounds;
+                        // The browser canvas grows over several frames after startup; keep
+                        // refitting until the user moves the view themselves.
                         if cfg!(target_family = "wasm")
-                            && (f32::from(previous_size.width) < 100.0
-                                || f32::from(previous_size.height) < 100.0)
-                            && f32::from(bounds.size.width) >= 100.0
-                            && f32::from(bounds.size.height) >= 100.0
+                            && previous_size != bounds.size
+                            && this.auto_fit.as_ref() == Some(&this.editor.viewport)
                         {
                             this.need_fit = true;
                         }
@@ -974,6 +940,7 @@ impl GateApp {
                                 ),
                             );
                             this.need_fit = false;
+                            this.auto_fit = Some(this.editor.viewport.clone());
                         }
                         this.scene()
                     }) {
@@ -1009,138 +976,142 @@ impl GateApp {
     }
 
     fn interface(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut rows = div()
-            .id("interface-ports")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .border_1()
-            .border_color(rgb(self.theme.palette().shadow))
-            .bg(rgb(self.theme.palette().panel));
+        let theme = cx.theme();
+        let (muted, border, radius) = (theme.muted_foreground, theme.border, theme.radius);
+        let mut rows = v_flex().id("interface-ports").p_1();
         for net in &self.editor.module().nets {
             let id = net.id;
-            let selected = self.editor.selected_net == Some(id);
             rows = rows.child(
-                div()
-                    .id(SharedString::from(format!("interface-net-{}", id.0)))
-                    .flex()
-                    .h(px(29.0))
-                    .items_center()
-                    .gap(px(12.0))
-                    .px(px(10.0))
-                    .cursor_pointer()
-                    .bg(rgb(if selected {
-                        self.theme.palette().selection
-                    } else {
-                        self.theme.palette().panel
-                    }))
-                    .border_b_1()
-                    .border_color(rgb(self.theme.palette().hover))
-                    .hover(|style| style.bg(rgb(self.theme.palette().hover)))
-                    .child(div().w(px(170.0)).child(net.name.clone()))
-                    .child(div().w(px(60.0)).child(format!("{} bit", net.width)))
-                    .child(div().flex_1().child(match net.port {
-                        Some(Direction::Input) => "input",
-                        Some(Direction::Output) => "output",
-                        Some(Direction::InOut) => "inout",
-                        None => "internal",
-                    }))
+                ListItem::new(SharedString::from(format!("interface-net-{}", id.0)))
+                    .text_sm()
+                    .selected(self.editor.selected_net == Some(id))
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .gap_3()
+                            .child(div().w(px(170.0)).truncate().child(net.name.clone()))
+                            .child(
+                                div()
+                                    .w(px(60.0))
+                                    .text_color(muted)
+                                    .child(format!("{} bit", net.width)),
+                            )
+                            .child(div().flex_1().child(match net.port {
+                                Some(Direction::Input) => "input",
+                                Some(Direction::Output) => "output",
+                                Some(Direction::InOut) => "inout",
+                                None => "internal",
+                            })),
+                    )
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.editor.selected_net = Some(id);
                         cx.notify();
                     })),
             );
         }
-        div().flex_1().min_h_0().flex().flex_col().p(px(20.0)).gap(px(12.0)).bg(rgb(self.theme.palette().light))
-            .child(div().text_size(px(16.0)).font_weight(FontWeight::BOLD).child(format!("Module interface: {}", self.editor.active_module())))
-            .child("Select a net, then set its direction. Ports are included in Verilog exports.")
-            .child(div().flex().gap(px(7.0))
-                .child(self.button("port-input", "Input", Command::Port(Some(Direction::Input)), false, cx))
-                .child(self.button("port-output", "Output", Command::Port(Some(Direction::Output)), false, cx))
-                .child(self.button("port-inout", "InOut", Command::Port(Some(Direction::InOut)), false, cx))
-                .child(self.button("port-internal", "Internal", Command::Port(None), false, cx)))
-            .child(rows)
-            .child(div().text_size(px(11.0)).text_color(rgb(self.theme.palette().muted)).child("Ports become pins on module instances. Click ＋ beside a module to place it in another module. Recursive instances are rejected."))
+        v_flex()
+            .flex_1()
+            .min_h_0()
+            .p_4()
+            .gap_3()
+            .child(
+                div()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(format!("Module interface: {}", self.editor.active_module())),
+            )
+            .child(
+                Label::new("Select a net, then set its direction. Ports are included in Verilog exports.")
+                    .text_color(muted),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(self.button("port-input", "Input", Command::Port(Some(Direction::Input)), false, cx))
+                    .child(self.button("port-output", "Output", Command::Port(Some(Direction::Output)), false, cx))
+                    .child(self.button("port-inout", "InOut", Command::Port(Some(Direction::InOut)), false, cx))
+                    .child(self.button("port-internal", "Internal", Command::Port(None), false, cx)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .border_1()
+                    .border_color(border)
+                    .rounded(radius)
+                    .child(rows.size_full().overflow_y_scrollbar()),
+            )
+            .child(
+                Label::new("Ports become pins on module instances. Click + beside a module to place it in another module. Recursive instances are rejected.")
+                    .text_xs()
+                    .text_color(muted),
+            )
             .into_any_element()
     }
 
-    fn bottom_panel(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut panel = div()
-            .h(px(self.bottom_height))
-            .flex_none()
-            .flex()
-            .flex_col()
-            .border_1()
-            .border_color(rgb(self.theme.palette().shadow));
-        panel = panel.child(
-            div()
-                .h(px(25.0))
-                .flex()
-                .items_center()
-                .child(
-                    div()
-                        .id("messages-tab")
-                        .h_full()
-                        .px(px(12.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(5.0))
-                        .bg(rgb(if !self.bottom_scope {
-                            self.theme.palette().panel
-                        } else {
-                            self.theme.palette().chrome
-                        }))
-                        .cursor_pointer()
-                        .child(self.themed_icon("log"))
-                        .child("Messages")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.bottom_scope = false;
-                            cx.notify();
-                        })),
-                )
-                .child(
-                    div()
-                        .id("waveforms-tab")
-                        .h_full()
-                        .px(px(12.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(5.0))
-                        .bg(rgb(if self.bottom_scope {
-                            self.theme.palette().panel
-                        } else {
-                            self.theme.palette().chrome
-                        }))
-                        .cursor_pointer()
-                        .child(self.themed_icon("sim_view"))
-                        .child("Waveforms")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.bottom_scope = true;
-                            cx.notify();
-                        })),
-                )
-                .child(div().flex_1())
-                .child(div().text_size(px(11.0)).mr(px(9.0)).child(format!(
-                    "Time: {} ns",
-                    self.simulation.as_ref().map_or(0, |sim| sim.time())
-                ))),
-        );
-        if self.bottom_scope {
-            panel = panel.child(self.waveform_panel(cx));
-        } else {
-            self.message_log
-                .update(cx, |log, _| log.set_messages(&self.messages));
-            let messages = div()
-                .id("messages-content")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .bg(rgb(self.theme.palette().panel))
-                .p(px(8.0))
-                .child(self.message_log.clone());
-            panel = panel.child(messages);
+    fn message_log(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let start = self.messages.len().saturating_sub(MESSAGE_HISTORY);
+        let text = self.messages[start..].join("\n");
+        if self.message_log.read(cx).value().as_ref() != text {
+            let last_row = self.messages.len().saturating_sub(start + 1) as u32;
+            self.message_log.update(cx, |log, cx| {
+                log.set_value(text, window, cx);
+                log.set_cursor_position(
+                    gpui_component::input::Position::new(last_row, 0),
+                    window,
+                    cx,
+                );
+            });
         }
-        panel.into_any_element()
+        div()
+            .id("messages-content")
+            .flex_1()
+            .min_h_0()
+            .child(
+                Textarea::new(&self.message_log)
+                    .readonly(true)
+                    .bordered(false)
+                    .small()
+                    .h(gpui::relative(1.0)),
+            )
+            .into_any_element()
+    }
+
+    fn bottom_panel(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let content = if self.bottom_scope {
+            self.waveform_panel(window, cx)
+        } else {
+            self.message_log(window, cx)
+        };
+        v_flex()
+            .size_full()
+            .child(
+                TabBar::new("bottom-tabs")
+                    .underline()
+                    .xsmall()
+                    .selected_index(usize::from(self.bottom_scope))
+                    .on_click(cx.listener(|this, index: &usize, _, cx| {
+                        this.bottom_scope = *index == 1;
+                        cx.notify();
+                    }))
+                    .child(
+                        Tab::new()
+                            .label("Messages")
+                            .prefix(Icon::new(IconName::ScrollText).small()),
+                    )
+                    .child(
+                        Tab::new()
+                            .label("Waveforms")
+                            .prefix(Icon::new(IconName::AudioWaveform).small()),
+                    )
+                    .suffix(div().pr_2().text_xs().text_color(muted).child(format!(
+                        "Time: {} ns",
+                        self.simulation.as_ref().map_or(0, |sim| sim.time())
+                    ))),
+            )
+            .child(content)
+            .into_any_element()
     }
 
     fn status_bar(&self) -> AnyElement {
@@ -1158,68 +1129,26 @@ impl GateApp {
             Tool::Delete => "Cut",
             Tool::Place(kind) => kind.name(),
         };
-        div()
-            .h(px(25.0))
-            .flex_none()
-            .flex()
-            .gap(px(4.0))
-            .items_center()
-            .px(px(5.0))
-            .pb(px(3.0))
-            .text_size(px(11.0))
-            .child(
-                self.theme
-                    .palette()
-                    .sunken()
-                    .w(px(225.0))
-                    .h(px(20.0))
-                    .px(px(5.0))
-                    .overflow_hidden()
-                    .child(format!("File: {file}{dirty}")),
-            )
-            .child(
-                self.theme
-                    .palette()
-                    .sunken()
-                    .w(px(150.0))
-                    .h(px(20.0))
-                    .px(px(5.0))
-                    .child(format!(
-                        "Module: {}",
-                        self.debug_path
-                            .as_deref()
-                            .unwrap_or(self.editor.active_module())
-                    )),
-            )
-            .child(
-                self.theme
-                    .palette()
-                    .sunken()
-                    .flex_1()
-                    .min_w_0()
-                    .h(px(20.0))
-                    .px(px(5.0))
-                    .overflow_hidden()
-                    .child(self.status.clone()),
-            )
-            .child(
-                self.theme
-                    .palette()
-                    .sunken()
-                    .w(px(187.0))
-                    .h(px(20.0))
-                    .px(px(5.0))
-                    .child(format!(
-                        "{tool}  {:.0}%  ({:.0}, {:.0})",
-                        self.editor.viewport.zoom * 100.0,
-                        self.mouse.x,
-                        self.mouse.y
-                    )),
-            )
+        StatusBar::new()
+            .left(format!("File: {file}{dirty}"))
+            .left(Separator::vertical().h(px(12.0)))
+            .left(format!(
+                "Module: {}",
+                self.debug_path
+                    .as_deref()
+                    .unwrap_or(self.editor.active_module())
+            ))
+            .child(div().min_w_0().truncate().child(self.status.clone()))
+            .right(format!(
+                "{tool}  {:.0}%  ({:.0}, {:.0})",
+                self.editor.viewport.zoom * 100.0,
+                self.mouse.x,
+                self.mouse.y
+            ))
             .into_any_element()
     }
 
-    pub(crate) fn canvas_menu_entries(&self) -> Vec<commands::MenuEntry> {
+    pub(crate) fn canvas_menu_entries(&self) -> Vec<MenuEntry> {
         let menu = if !self.editor.selection.is_empty() {
             "CanvasComponent"
         } else if !self.editor.selected_wires.is_empty() {
@@ -1269,957 +1198,127 @@ impl GateApp {
         entries
     }
 
-    fn popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let popup = self.popup.as_ref()?;
-        let mut items = div()
-            .occlude()
-            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-            .on_pinch(|_, _, cx| cx.stop_propagation())
-            .on_mouse_down_out(cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
-                if this.dialog.is_none()
-                    && !this
-                        .menu_bounds
-                        .iter()
-                        .any(|bounds| bounds.contains(&event.position))
-                {
-                    this.popup = None;
-                    cx.stop_propagation();
-                    cx.notify();
-                }
-            }))
-            .w(px(280.0))
-            .id("popup-items")
-            .debug_selector(|| "popup-items".into())
-            .max_h(px(480.0))
-            .overflow_y_scroll()
-            .bg(rgb(self.theme.palette().chrome))
-            .border_1()
-            .border_color(rgb(self.theme.palette().shadow))
-            .rounded(px(self.theme.palette().radius))
-            .shadow_lg()
-            .py(px(3.0))
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
-        let entries = if popup.menu == "Canvas" {
-            self.canvas_menu_entries()
-        } else {
-            commands::entries(&popup.menu)
-        };
-        for (index, entry) in entries.into_iter().enumerate() {
-            if let Some(command) = entry.command {
-                let selected = matches!(command, Command::SetTheme(theme) if theme == self.theme);
-                items = items.child(
-                    div()
-                        .id(SharedString::from(format!("popup-{index}")))
-                        .debug_selector(|| format!("popup-item-{index}"))
-                        .h(px(25.0))
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .px(px(11.0))
-                        .cursor_pointer()
-                        .hover(|style| style.bg(rgb(self.theme.palette().accent)))
-                        .child(format!(
-                            "{}{}",
-                            if selected { "✓  " } else { "" },
-                            entry.label
-                        ))
-                        .child(
-                            div()
-                                .text_size(px(11.0))
-                                .text_color(rgb(self.theme.palette().muted))
-                                .child(entry.shortcut),
-                        )
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.command(command.clone(), window, cx);
-                            cx.stop_propagation();
-                        })),
-                );
-            } else {
-                items = items.child(
-                    div()
-                        .h(px(1.0))
-                        .my(px(4.0))
-                        .mx(px(4.0))
-                        .bg(rgb(self.theme.palette().shadow)),
-                );
-            }
-        }
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .child(
-                    anchored()
-                        .position(point(px(popup.position.x), px(popup.position.y)))
-                        .snap_to_window()
-                        .child(items),
-                )
-                .into_any_element(),
-        )
-    }
-
-    fn dialog_header(
-        &self,
-        title: &'static str,
-        closable: bool,
+    pub(crate) fn open_canvas_menu(
+        &mut self,
+        position: gpui::Point<Pixels>,
+        window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let palette = self.theme.palette();
-        let mut header = div()
-            .h(px(32.0))
-            .flex_none()
-            .flex()
-            .items_center()
-            .pl(px(10.0))
-            .pr(px(4.0))
-            .gap(px(8.0))
-            .bg(rgb(palette.accent))
-            .font_weight(FontWeight::BOLD)
-            .child(div().flex_1().child(title));
-        if closable {
-            header = header.child(
-                div()
-                    .id("dialog-header-close")
-                    .debug_selector(|| "dialog-header-close".into())
-                    .size(px(24.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(palette.radius))
-                    .text_size(px(20.0))
-                    .font_weight(FontWeight::NORMAL)
-                    .text_color(rgb(palette.text))
-                    .hover(|style| style.bg(rgb(palette.hover)))
-                    .active(|style| style.bg(rgb(palette.selection)))
-                    .cursor_pointer()
-                    .child("×")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.dismiss_dialog(window, cx);
-                        cx.stop_propagation();
-                    })),
-            );
+    ) {
+        let entries = self.canvas_menu_entries();
+        if entries.is_empty() {
+            return;
         }
-        header.into_any_element()
+        let app = cx.weak_entity();
+        let menu = PopupMenu::build(window, cx, move |menu, _, _| {
+            menu_items(menu.min_w(px(220.0)), entries, app, None)
+        });
+        menu.focus_handle(cx).focus(window, cx);
+        let dismiss = cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, window, cx| {
+            this.context_menu = None;
+            this.focus.focus(window, cx);
+            cx.notify();
+        });
+        self.context_menu = Some(ContextMenu {
+            position,
+            menu,
+            _dismiss: dismiss,
+        });
     }
 
-    fn dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let dialog = self.dialog.as_ref()?;
-        let (title, width) = match dialog {
-            Dialog::HdlSignals { .. } => ("Live HDL signals", 700.0),
-            Dialog::HdlTop { .. } => ("Choose top module", 440.0),
-            Dialog::VerilogPorts { .. } => ("Verilog module ports", 520.0),
-            Dialog::Verilog { .. } => ("Verilog module source", 900.0),
-            Dialog::HdlInput { .. } => ("Set HDL input (hex)", 400.0),
-            Dialog::Symbol(_) => ("Module symbol editor", 640.0),
-            Dialog::Find { .. } => ("Find gates and nets", 580.0),
-            Dialog::Vga { .. } => ("VGA display", 620.0),
-            Dialog::Recovery => ("Recover unsaved circuit", 500.0),
-            Dialog::Properties(properties)
-                if self
-                    .editor
-                    .module()
-                    .gate(properties.gate)
-                    .is_some_and(|gate| gate.kind == GateKind::Frame) =>
-            {
-                ("Frame properties", 500.0)
-            }
-            Dialog::Properties(properties)
-                if self
-                    .editor
-                    .module()
-                    .gate(properties.gate)
-                    .is_some_and(|gate| gate.kind == GateKind::Comment) =>
-            {
-                ("Comment properties", 500.0)
-            }
-            Dialog::Properties(_) => ("Gate properties", 500.0),
-            Dialog::Input { .. } => ("Set DIP input", 400.0),
-            Dialog::Memory { .. } => ("Memory inspector", 580.0),
-            Dialog::Net(_) => ("Net properties", 440.0),
-            Dialog::Terminal { .. } => ("Terminal I/O", 580.0),
-            Dialog::NewModule { .. } => ("New module", 380.0),
-            Dialog::Help => ("Getting started", 590.0),
-            Dialog::About => ("About RGate", 550.0),
-        };
-        let mut content = div().flex().flex_col().gap(px(10.0)).p(px(16.0));
-        let mut apply = false;
-        match dialog {
-            Dialog::VerilogPorts { module, error } => {
-                apply = true;
-                content=content.child(format!("{module} · ports defined in Verilog source"))
-                    .child("Use these pins to connect an instance in your parent schematic. Edit declarations in the source, then refresh to update instance pins.");
-                let mut ports = div()
-                    .id("verilog-ports-list")
-                    .max_h(px(240.0))
-                    .overflow_y_scroll();
-                match self
-                    .editor
-                    .circuit()
-                    .module(module)
-                    .and_then(|m| m.verilog.as_ref().map(|source| (source, &m.nets)))
-                {
-                    Some((source, nets)) => {
-                        match rgate_format::hdl::inferred_nets(source, module, nets) {
-                            Ok(nets) => {
-                                ports = ports.child(
-                                    div()
-                                        .flex()
-                                        .gap(px(12.0))
-                                        .child(div().w(px(90.0)).child("Direction"))
-                                        .child(div().flex_1().child("Pin"))
-                                        .child("Width"),
-                                );
-                                let mut count = 0;
-                                for net in nets.iter().filter(|n| n.port.is_some()) {
-                                    count += 1;
-                                    ports = ports.child(
-                                        div()
-                                            .flex()
-                                            .gap(px(12.0))
-                                            .py(px(4.0))
-                                            .child(div().w(px(90.0)).child(match net.port {
-                                                Some(Direction::Input) => "Input →",
-                                                Some(Direction::Output) => "Output ←",
-                                                _ => "InOut ↔",
-                                            }))
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .font_family("Menlo")
-                                                    .child(net.name.clone()),
-                                            )
-                                            .child(format!(
-                                                "{} bit{}",
-                                                net.width,
-                                                if net.width == 1 { "" } else { "s" }
-                                            )),
-                                    );
-                                }
-                                if count == 0 {
-                                    ports = ports.child("This module has no external ports.");
-                                }
-                            }
-                            Err(error) => {
-                                ports = ports.child(
-                                    div().text_color(rgb(self.theme.palette().error)).child(
-                                        format!("Correct the source declarations first: {error}"),
-                                    ),
-                                );
-                            }
-                        }
-                    }
-                    None => {
-                        ports = ports.child("Source module is unavailable.");
-                    }
-                }
-                content=content.child(ports).child("During simulation, use Simulate → Browse HDL signals… to inspect internal signals and add waveform probes.");
-                if let Some(error) = error {
-                    content = content.child(
-                        div()
-                            .text_color(rgb(self.theme.palette().error))
-                            .child(error.clone()),
-                    );
-                }
-            }
-            Dialog::HdlSignals { query } => {
-                content=content.child(query.clone()).child("Click a signal to inspect its live value; Probe records its waveform. Filter by an instance path to explore that scope.");
-                let mut list = div()
-                    .id("hdl-signals-list")
-                    .h(px(350.0))
-                    .overflow_y_scroll();
-                #[cfg(feature = "icarus")]
-                if let Some(sim) = &self.simulation {
-                    let filter = query.read(cx).value.to_ascii_lowercase();
-                    for (index, signal) in sim
-                        .discovered_signals()
-                        .iter()
-                        .filter(|s| s.path.to_ascii_lowercase().contains(&filter))
-                        .take(2000)
-                        .enumerate()
-                    {
-                        let path = signal.path.clone();
-                        let probe_path = path.clone();
-                        let value = sim
-                            .hdl_bound_value(&path)
-                            .map(ToString::to_string)
-                            .unwrap_or_else(|| "Inspect".into());
-                        list = list.child(
-                            div()
-                                .id(("hdl-signal", index))
-                                .flex()
-                                .gap(px(8.0))
-                                .child(
-                                    div()
-                                        .id(("hdl-inspect", index))
-                                        .flex_1()
-                                        .cursor_pointer()
-                                        .child(format!("{} [{} bits]  {value}", path, signal.width))
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.inspect_hdl_signal(&path, false, cx)
-                                        })),
-                                )
-                                .child(
-                                    div()
-                                        .id(("hdl-probe", index))
-                                        .cursor_pointer()
-                                        .child("Probe / Remove")
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.inspect_hdl_signal(&probe_path, true, cx)
-                                        })),
-                                ),
-                        );
-                    }
-                }
-                #[cfg(not(feature = "icarus"))]
-                {
-                    list = list.child(
-                        "Open a Verilog circuit in desktop RGate to inspect live HDL signals.",
-                    );
-                }
-                content = content.child(list);
-            }
-            Dialog::HdlTop {
-                circuit, selected, ..
-            } => {
-                apply = true;
-                content=content.child("Choose the module to run first. All source definitions will be available in Modules.");
-                for module in &circuit.modules {
-                    let name = module.name.clone();
-                    content = content.child(
-                        div()
-                            .id(SharedString::from(format!("top-{name}")))
-                            .cursor_pointer()
-                            .child(format!(
-                                "{} {name}",
-                                if name == *selected { "●" } else { "○" }
-                            ))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if let Some(Dialog::HdlTop { selected, .. }) = &mut this.dialog {
-                                    *selected = name.clone();
-                                }
-                                cx.notify();
-                            })),
-                    );
-                }
-            }
-            Dialog::Verilog {
-                creating,
-                name,
-                source,
-                interface,
-                error,
-                ..
-            } => {
-                apply = true;
-                content = content
-                    .child("Module name (must match source declaration)")
-                    .child(name.clone());
-                if *creating || cfg!(target_family = "wasm") {
-                    content=content.child("Initial source — trusted HDL only. After creation, edit in the Edit tab.")
-                        .child(div().id("verilog-source-scroll").h(px(300.0)).overflow_y_scroll().child(source.clone()));
-                }
-                content = content
-                    .child("Ports are inferred from source. Add internal observations: signal name width")
-                    .child(
-                        div()
-                            .id("verilog-interface-scroll")
-                            .h(px(130.0))
-                            .overflow_y_scroll()
-                            .child(interface.clone()),
-                    );
-                if let Some(error) = error {
-                    content = content.child(
-                        div()
-                            .text_color(rgb(self.theme.palette().error))
-                            .child(error.clone()),
-                    );
-                }
-            }
-            Dialog::HdlInput { value, error, .. } => {
-                apply = true;
-                content = content.child(value.clone());
-                if let Some(error) = error {
-                    content = content.child(error.clone());
-                }
-            }
-            Dialog::Vga { gate } => {
-                content = content.child(self.vga_display(*gate, cx));
-                if self.held_reset_input().is_some() {
-                    content = content.child(self.release_reset_button("vga-release-reset", cx));
-                }
-            }
-            Dialog::Find { query } => {
-                content = content.child(query.clone());
-                let results = rgate_editor::search(self.editor.circuit(), &query.read(cx).value);
-                let mut list = div().id("find-results").h(px(300.0)).overflow_y_scroll();
-                if results.is_empty() {
-                    list = list.child(
-                        "Type to find gates/nets across module definitions (up to 200 results).",
-                    );
-                }
-                for (index, result) in results.into_iter().enumerate() {
-                    list = list.child(
-                        div()
-                            .id(SharedString::from(format!("find-{index}")))
-                            .debug_selector(|| format!("find-{index}"))
-                            .h(px(28.0))
-                            .cursor_pointer()
-                            .truncate()
-                            .child(format!(
-                                "{} / {} — {}",
-                                result.module, result.name, result.description
-                            ))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.select_search_result(result.clone(), window, cx)
-                            })),
-                    );
-                }
-                content = content.child(list);
-            }
-            Dialog::Recovery => {
-                content=content.child("An unsaved circuit was found from your previous session. Simulation runtime state is not restored.")
-                    .child(div().flex().gap(px(12.0))
-                        .child(div().id("recover-circuit").debug_selector(||"recover-circuit".into()).cursor_pointer().child("Recover circuit").on_click(cx.listener(|this,_,window,cx|this.restore_recovery(window,cx))))
-                        .child(div().id("discard-recovery").cursor_pointer().child("Discard recovery").on_click(cx.listener(|this,_,window,cx|this.discard_recovery(window,cx)))));
-            }
-            Dialog::Symbol(_) => {
-                apply = true;
-                content = content.child(crate::symbol_editor::editor(self, cx));
-            }
-            Dialog::Input { value, error, .. } => {
-                apply = true;
-                content = content.child(Self::field_row("Hex value", value.clone()));
-                if let Some(error) = error {
-                    content = content.child(error.clone());
-                }
-            }
-            Dialog::Memory {
-                gate,
-                address,
-                value,
-                error,
-            } => {
-                apply = true;
-                let words = self
-                    .simulation
-                    .as_ref()
-                    .and_then(|sim| {
-                        self.simulation_gate(*gate)
-                            .and_then(|id| sim.memory_words(id).ok())
-                    })
-                    .unwrap_or_default();
-                let mut listing = div()
-                    .id("memory-words")
-                    .h(px(220.0))
-                    .overflow_y_scroll()
-                    .bg(rgb(self.theme.palette().panel))
-                    .font_family(if cfg!(target_family = "wasm") {
-                        "Lilex"
-                    } else {
-                        "Menlo"
-                    })
-                    .p(px(8.0));
-                for (address, word) in words.iter().take(512) {
-                    listing = listing.child(format!("{address:04X}: {}", word.display_value()));
-                }
-                content = content.child(listing).child("Runtime edits are volatile; set initial contents in gate properties to save them.")
-                    .child(Self::field_row("Address (decimal)",address.clone())).child(Self::field_row("Value (hex)",value.clone()));
-                if let Some(error) = error {
-                    content = content.child(
-                        div()
-                            .text_color(rgb(self.theme.palette().error))
-                            .child(error.clone()),
-                    );
-                }
-            }
-            Dialog::Net(properties) => {
-                apply = true;
-                content = content
-                    .child(Self::field_row("Name", properties.name.clone()))
-                    .child(Self::field_row("Bit width", properties.width.clone()))
-                    .child(
-                        div()
-                            .id("net-show-name")
-                            .cursor_pointer()
-                            .child(if properties.show_name {
-                                "☑ Show net label"
-                            } else {
-                                "☐ Show net label"
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if let Some(Dialog::Net(dialog)) = &mut this.dialog {
-                                    dialog.show_name = !dialog.show_name;
-                                }
-                                cx.notify();
-                            })),
-                    );
-                if let Some(error) = &properties.error {
-                    content = content.child(
-                        div()
-                            .text_color(rgb(self.theme.palette().error))
-                            .child(error.clone()),
-                    );
-                }
-            }
-            Dialog::Terminal { gate, input, error } => {
-                apply = true;
-                let output = self
-                    .simulation
-                    .as_ref()
-                    .and_then(|sim| {
-                        self.simulation_gate(*gate)
-                            .and_then(|id| sim.terminal_output(id).ok())
-                    })
-                    .unwrap_or_default();
-                let empty = output.is_empty();
-                let mode = self
-                    .editor
-                    .module()
-                    .gate(*gate)
-                    .is_some_and(|gate| gate.config.tty_tkgate);
-                content = content.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .child(self.button(
-                            "terminal-run",
-                            if self.running { "Pause" } else { "Run" },
-                            Command::PlayPause,
-                            self.running,
-                            cx,
-                        ))
-                        .child(self.button(
-                            "terminal-step",
-                            "Clock step",
-                            Command::ClockStep,
-                            false,
-                            cx,
-                        ))
-                        .child(format!(
-                            "{} · {} ns",
-                            if self.running { "Running" } else { "Paused" },
-                            self.simulation.as_ref().map_or(0, |sim| sim.time())
-                        )),
-                );
-                if self.held_reset_input().is_some() {
-                    content = content
-                        .child(div().text_color(rgb(self.theme.palette().error)).child(
-                            "RESET_N is 0: the circuit is held in reset and cannot execute.",
-                        ))
-                        .child(self.release_reset_button("terminal-release-reset", cx));
-                }
-                content=content.child(div().id("terminal-output").h(px(200.0)).overflow_y_scroll().bg(rgb(0x202020)).text_color(rgb(0xeeeeee)).font_family(if cfg!(target_family="wasm"){"Lilex"}else{"Menlo"}).p(px(8.0))
-                    .child(if empty{"No output bytes received yet. Run/step the circuit after releasing reset.".into()}else{output}))
-                    .child(if mode {"TkGate mode: RD/DSR send output; TD/RTS/CTS receive input."}else{"TX writes a byte on WR rising edge. RX/READY expose queued input; RD rising edge consumes a byte."})
-                    .child(Self::field_row("Send UTF-8 bytes",input.clone()));
-                if let Some(error) = error {
-                    content = content.child(
-                        div()
-                            .text_color(rgb(self.theme.palette().error))
-                            .child(error.clone()),
-                    );
-                }
-            }
-            Dialog::Properties(properties) => {
-                apply = true;
-                let gate = self.editor.module().gate(properties.gate).unwrap();
-                content = content.child(
-                    div()
-                        .font_weight(FontWeight::BOLD)
-                        .child(gate.kind.name().to_owned()),
-                );
-                content = content.child(Self::field_row("Name", properties.name.clone()));
-                let fields = crate::properties::fields(&gate.kind);
-                for (label, field, visible) in [
-                    ("Bit width", &properties.width, fields.width),
-                    ("Initial value", &properties.value, fields.initial),
-                    ("Delay (ns)", &properties.delay, fields.delay),
-                    ("Clock period (ns)", &properties.period, fields.clock),
-                ] {
-                    if visible {
-                        content = content.child(Self::field_row(label, field.clone()));
-                    }
-                }
-                if gate.kind.is_logic() {
-                    content = content.child(
-                        div()
-                            .id("gate-reduction")
-                            .cursor_pointer()
-                            .child(if properties.reduction {
-                                "☑ Reduce input bus to one bit"
-                            } else {
-                                "☐ Reduce input bus to one bit"
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if let Some(Dialog::Properties(dialog)) = &mut this.dialog {
-                                    dialog.reduction = !dialog.reduction;
-                                }
-                                cx.notify();
-                            })),
-                    );
-                }
-                if gate.kind == GateKind::TriState {
-                    content = content
-                        .child(
-                            div()
-                                .id("tri-enable-low")
-                                .cursor_pointer()
-                                .child(if properties.enable_low {
-                                    "☑ Active-low enable"
-                                } else {
-                                    "☐ Active-low enable"
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    if let Some(Dialog::Properties(dialog)) = &mut this.dialog {
-                                        dialog.enable_low = !dialog.enable_low;
-                                    }
-                                    cx.notify();
-                                })),
-                        )
-                        .child(
-                            div()
-                                .id("tri-invert")
-                                .cursor_pointer()
-                                .child(if properties.invert_output {
-                                    "☑ Invert enabled output"
-                                } else {
-                                    "☐ Invert enabled output"
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    if let Some(Dialog::Properties(dialog)) = &mut this.dialog {
-                                        dialog.invert_output = !dialog.invert_output;
-                                    }
-                                    cx.notify();
-                                })),
-                        );
-                }
-                if matches!(gate.kind, GateKind::Module(_)) {
-                    content=content.child(Self::field_row("Block width",properties.module_width.clone()))
-                        .child(Self::field_row("Port positions JSON",properties.custom_ports.clone()))
-                        .child("Coordinates are relative to the block center; e.g. {\"A\":{\"x\":-50,\"y\":0}}.");
-                }
-                if gate.kind == GateKind::Tty {
-                    content = content.child(
-                        div()
-                            .id("tty-tkgate")
-                            .cursor_pointer()
-                            .child(if properties.tty_tkgate {
-                                "☑ TkGate TD/RD/RTS/CTS/DSR/DTR protocol"
-                            } else {
-                                "☐ TkGate protocol (otherwise TX/RX/WR/RD)"
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if let Some(Dialog::Properties(dialog)) = &mut this.dialog {
-                                    dialog.tty_tkgate = !dialog.tty_tkgate;
-                                }
-                                cx.notify();
-                            })),
-                    );
-                }
-                if gate.kind == GateKind::Clock {
-                    content = content
-                        .child(Self::field_row(
-                            "Phase delay (ns)",
-                            properties.phase.clone(),
-                        ))
-                        .child(Self::field_row("High duty (%)", properties.duty.clone()));
-                }
-                if matches!(gate.kind, GateKind::Multiply | GateKind::Divide) {
-                    content = content
-                        .child(Self::field_row(
-                            "Operand A width",
-                            properties.operand_a.clone(),
-                        ))
-                        .child(Self::field_row(
-                            "Operand B width",
-                            properties.operand_b.clone(),
-                        ));
-                }
-                if gate.kind == GateKind::Frame {
-                    content = content
-                        .child(Self::field_row(
-                            "Frame width",
-                            properties.frame_width.clone(),
-                        ))
-                        .child(Self::field_row(
-                            "Frame height",
-                            properties.frame_height.clone(),
-                        ))
-                        .child(Self::field_row("Title", properties.comment.clone()));
-                }
-                if gate.kind == GateKind::Led {
-                    let mut modes = div().flex().flex_col().gap(px(3.0)).child("Display type");
-                    for mode in rgate_core::LedDisplay::ALL {
-                        modes = modes.child(
-                            div()
-                                .id(SharedString::from(format!("led-mode-{mode:?}")))
-                                .debug_selector(|| format!("led-mode-{mode:?}"))
-                                .cursor_pointer()
-                                .h(px(22.0))
-                                .child(format!(
-                                    "{} {}",
-                                    if properties.led_display == mode {
-                                        "◉"
-                                    } else {
-                                        "○"
-                                    },
-                                    mode.label()
-                                ))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.select_led_display(mode, cx);
-                                })),
-                        );
-                    }
-                    let width = properties
-                        .width
-                        .read(cx)
-                        .value
-                        .parse::<u16>()
-                        .ok()
-                        .filter(|width| (1..=4096).contains(width));
-                    content = content.child(modes).child(
-                        div()
-                            .id("led-width-preview")
-                            .font_weight(FontWeight::BOLD)
-                            .child(
-                                width
-                                    .map(|width| properties.led_display.preview(width))
-                                    .unwrap_or_else(|| "Enter a width from 1 to 4096.".into()),
-                            ),
-                    );
-                    let connected = gate.pins.iter().any(|pin| pin.net.is_some());
-                    content = content.child(if connected {
-                        "Wired LED: its bus width is preserved when you change display type."
-                    } else {
-                        "Choosing a display type sets the recommended width automatically. You can override it."
-                    });
-                    if properties.led_display == rgate_core::LedDisplay::SevenSegment {
-                        content = content.child("Segment map: bit 0 top; 1 upper-left; 2 upper-right; 3 middle; 4 lower-left; 5 lower-right; 6 bottom.");
-                    }
-                }
-                if matches!(
-                    gate.kind,
-                    GateKind::Mux | GateKind::Decoder | GateKind::Demux
-                ) || gate.kind.is_logic()
-                {
-                    content = content.child(Self::field_row(
-                        "Input/output count",
-                        properties.inputs.clone(),
-                    ));
-                }
-                if matches!(gate.kind, GateKind::Concat | GateKind::Splitter) {
-                    content = content.child(Self::field_row(
-                        "Partitions (LSB first)",
-                        properties.partitions.clone(),
-                    ));
-                }
-                if gate.kind == GateKind::Tap {
-                    content = content
-                        .child(Self::field_row(
-                            "Tap bit offset",
-                            properties.tap_offset.clone(),
-                        ))
-                        .child(Self::field_row(
-                            "Tap output width",
-                            properties.tap_width.clone(),
-                        ));
-                }
-                if matches!(gate.kind, GateKind::Ram | GateKind::Rom) {
-                    content = content.child(Self::field_row("Address bits", properties.address_bits.clone()))
-                        .child(Self::field_row("Initial hex words", properties.memory.clone()))
-                        .child(self.button("load-memory-image", "Load hex file…", Command::LoadMemory, false, cx))
-                        .child("Hex words, e.g. 41 42 FF or @10 AB CD. Unspecified words are X. RAM CS/OE/WE and ROM OE are active-low.");
-                }
-                if gate.kind == GateKind::Comment {
-                    for (index, link) in rgate_core::comment_links(&gate.text)
-                        .into_iter()
-                        .enumerate()
-                    {
-                        if link.target.starts_with("https://") || link.target.starts_with("http://")
-                        {
-                            content = content.child(
-                                div()
-                                    .id(SharedString::from(format!("comment-link-{index}")))
-                                    .cursor_pointer()
-                                    .child(format!("Open link: {}", link.label))
-                                    .on_click(move |_, _, cx| cx.open_url(&link.target)),
-                            );
-                        }
-                    }
-                    content = content.child(Self::field_row(
-                        "Text (\\n = newline)",
-                        properties.comment.clone(),
-                    ));
-                }
-                content = content.child(
-                    div()
-                        .id("property-show-name")
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .cursor_pointer()
-                        .child(if properties.show_name { "☑" } else { "☐" })
-                        .child("Show instance name")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            if let Some(Dialog::Properties(dialog)) = &mut this.dialog {
-                                dialog.show_name = !dialog.show_name;
-                            }
-                            cx.notify();
-                        })),
-                );
-                if let Some(error) = &properties.error {
-                    content = content.child(
-                        div()
-                            .text_color(rgb(self.theme.palette().error))
-                            .child(error.clone()),
-                    );
-                }
-            }
-            Dialog::NewModule { name, error } => {
-                apply = true;
-                content = content.child(Self::field_row("Module name", name.clone()));
-                if let Some(error) = error {
-                    content = content.child(
-                        div()
-                            .text_color(rgb(self.theme.palette().error))
-                            .child(error.clone()),
-                    );
-                }
-            }
-            Dialog::Help => {
-                for (label, text) in [
-                    (
-                        "Build a circuit",
-                        "Choose a gate in Make or the parts toolbar, then click the canvas. W starts wiring: click a pin, add corners, and click the destination pin. V returns to selection.",
-                    ),
-                    (
-                        "Edit",
-                        "Drag to move gates; Shift-click selects more than one. R rotates. Delete removes the selection. Double-click a gate for properties. ⌘/Ctrl-Z undoes an edit.",
-                    ),
-                    (
-                        "Simulate",
-                        "Space runs or pauses. Click switches to toggle; DIP switches increment. F6 steps one event; Tab advances a clock cycle. The square Stop button returns to editing.",
-                    ),
-                    (
-                        "Watch signals",
-                        "Double-click a wire or click ○ in Nets to add a waveform probe. X means unknown; Z means floating. Buses support up to 64 bits.",
-                    ),
-                    (
-                        "Navigate and save",
-                        "Scroll to pan; ⌘/Ctrl-scroll zooms; ⌘/Ctrl-0 fits. Save .rgate for native files, or export .v with layout metadata. Use File → Open to load a circuit from the examples folder.",
-                    ),
-                    (
-                        "Current scope",
-                        "This is a working foundation, not a complete TkGate port. Arbitrary HDL, Tcl peripheral plugins, timing checks, and symbol editing are not implemented. Unsupported imported elements are reported in Messages.",
-                    ),
-                ] {
-                    content = content
-                        .child(div().font_weight(FontWeight::BOLD).child(label))
-                        .child(text);
-                }
-            }
-            Dialog::About => {
-                content = content.child(div().flex().gap(px(16.0)).items_center()
-                    .child(self.themed_logo(70.0))
-                    .child(div().flex().flex_col().gap(px(4.0)).child(div().text_size(px(20.0)).font_weight(FontWeight::BOLD).child("RGate 0.1"))
-                        .child("A Rust / GPUI reimplementation of TkGate")))
-                    .child("Inspired by TkGate. Classic artwork is adapted from TkGate reference images; original artwork © Jeffery P. Hansen and contributors, GPL-2.0-or-later.")
-                    .child("RGate and Classic artwork adaptations are GPL-3.0-or-later. GPUI/GPUI Kit are Apache-2.0; bundled Lucide/Feather icons are ISC/MIT. See LICENSE, NOTICE and the distribution license inventory.")
-                    .child("Independent reimplementation; not an official TkGate release. Distributed without warranty.");
-            }
-        }
-        let mut buttons = div()
-            .flex()
-            .justify_end()
-            .gap(px(8.0))
-            .px(px(16.0))
-            .pb(px(14.0));
-        if apply {
-            if !matches!(dialog, Dialog::Recovery) {
-                buttons = buttons.child(
-                    div()
-                        .id("dialog-apply")
-                        .rounded(px(self.theme.palette().radius))
-                        .h(px(27.0))
-                        .px(px(18.0))
-                        .flex()
-                        .items_center()
-                        .bg(rgb(self.theme.palette().accent))
-                        .border_1()
-                        .border_color(rgb(self.theme.palette().shadow))
-                        .cursor_pointer()
-                        .child(if matches!(dialog, Dialog::VerilogPorts { .. }) {
-                            "Refresh from source"
-                        } else {
-                            "Apply"
-                        })
-                        .on_click(cx.listener(|this, _, window, cx| this.apply_dialog(window, cx))),
-                );
-            }
-            buttons = buttons.child(
-                div()
-                    .id("dialog-close")
-                    .rounded(px(self.theme.palette().radius))
-                    .h(px(27.0))
-                    .px(px(18.0))
-                    .flex()
-                    .items_center()
-                    .bg(rgb(self.theme.palette().chrome))
-                    .border_1()
-                    .border_color(rgb(self.theme.palette().shadow))
-                    .cursor_pointer()
-                    .child(if apply && !matches!(dialog, Dialog::VerilogPorts { .. }) {
-                        "Cancel"
-                    } else {
-                        "Close"
-                    })
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.dismiss_dialog(window, cx);
-                    })),
-            );
-        }
+    fn context_menu_layer(&self) -> Option<AnyElement> {
+        let menu = self.context_menu.as_ref()?;
         Some(
-            div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(gpui::rgba(0x00000040))
-                .occlude()
-                .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-                .on_pinch(|_, _, cx| cx.stop_propagation())
-                .child(
-                    div()
-                        .id("dialog-content")
-                        .debug_selector(|| "dialog-content".into())
-                        .w(px(width))
-                        .rounded(px(self.theme.palette().radius))
-                        .overflow_hidden()
-                        .max_h(px(740.0))
-                        .bg(rgb(self.theme.palette().chrome))
-                        .border_1()
-                        .border_color(rgb(self.theme.palette().shadow))
-                        .shadow_lg()
-                        .flex()
-                        .flex_col()
-                        .child(self.dialog_header(title, !matches!(dialog, Dialog::Recovery), cx))
-                        .child(content)
-                        .child(buttons),
-                )
-                .into_any_element(),
+            deferred(
+                anchored()
+                    .position(menu.position)
+                    .snap_to_window_with_margin(px(8.0))
+                    .child(menu.menu.clone()),
+            )
+            .with_priority(gpui_base::POPUP_PRIORITY)
+            .into_any_element(),
         )
     }
 
-    fn field_row(label: &'static str, field: gpui::Entity<crate::input::TextField>) -> AnyElement {
-        div()
-            .debug_selector(move || format!("property-field-{label}"))
-            .flex()
-            .items_center()
-            .gap(px(10.0))
-            .child(div().w(px(130.0)).flex_none().child(label))
-            .child(div().flex_1().child(field))
+    fn panes(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        self.layout.keep_side_panes(
+            [
+                &[(0, self.sidebar_width), (2, self.components_width)],
+                &[(0, self.modules_height)],
+                &[(1, self.bottom_height)],
+            ],
+            window,
+            cx,
+        );
+        let content = if self.tab == WorkspaceTab::Interface {
+            self.interface(cx)
+        } else {
+            self.schematic(window, cx)
+        };
+        let theme = cx.theme();
+        let (sidebar_bg, background) = (theme.sidebar, theme.background);
+        let main_app = cx.weak_entity();
+        let center_app = cx.weak_entity();
+        let center = v_resizable("center-split")
+            .with_state(&self.layout.center)
+            .on_resize(move |state, _, cx| {
+                let height = state.read(cx).sizes().get(1).copied();
+                if let Some(height) = height
+                    && let Err(error) =
+                        center_app.update(cx, |this, _| this.bottom_height = f32::from(height))
+                {
+                    eprintln!("panel resize ignored: {error}");
+                }
+            })
+            .child(
+                resizable_panel().size_range(px(160.0)..Pixels::MAX).child(
+                    v_flex()
+                        .size_full()
+                        .bg(background)
+                        .child(self.workspace_tabs(cx))
+                        .child(content),
+                ),
+            )
+            .child(
+                resizable_panel()
+                    .size(px(self.bottom_height))
+                    .size_range(px(80.0)..px(380.0))
+                    .flex_none()
+                    .child(self.bottom_panel(window, cx)),
+            );
+        h_resizable("main-split")
+            .with_state(&self.layout.main)
+            .on_resize(move |state, _, cx| {
+                let sizes = state.read(cx).sizes().clone();
+                if let [sidebar, _, components] = sizes[..]
+                    && let Err(error) = main_app.update(cx, |this, _| {
+                        this.sidebar_width = f32::from(sidebar);
+                        this.components_width = f32::from(components);
+                    })
+                {
+                    eprintln!("panel resize ignored: {error}");
+                }
+            })
+            .child(
+                resizable_panel()
+                    .size(px(self.sidebar_width))
+                    .size_range(px(150.0)..px(400.0))
+                    .flex_none()
+                    .bg(sidebar_bg)
+                    .child(self.sidebar(cx)),
+            )
+            .child(
+                resizable_panel()
+                    .size_range(px(200.0)..Pixels::MAX)
+                    .child(center),
+            )
+            .child(
+                resizable_panel()
+                    .size(px(self.components_width))
+                    .size_range(px(150.0)..px(600.0))
+                    .flex_none()
+                    .bg(sidebar_bg)
+                    .child(self.component_sidebar(cx)),
+            )
             .into_any_element()
     }
 }
@@ -2234,7 +1333,10 @@ impl Render for GateApp {
             self.editor.circuit().title,
             if self.editor.is_dirty() { " *" } else { "" }
         ));
-        let mut root = div()
+        self.sync_dialog(window, cx);
+        let theme = cx.theme();
+        let (background, foreground) = (theme.background, theme.foreground);
+        div()
             .id("rgate")
             .key_context(if self.dialog.is_some() {
                 "RGateDialog"
@@ -2246,30 +1348,16 @@ impl Render for GateApp {
             .flex()
             .flex_col()
             .relative()
-            .bg(rgb(self.theme.palette().chrome))
-            .text_color(rgb(self.theme.palette().text))
-            .font_family(if cfg!(target_family = "wasm") {
-                "IBM Plex Sans"
-            } else {
-                self.theme.palette().font
-            })
-            .text_size(px(12.0))
+            .bg(background)
+            .text_color(foreground)
+            .text_sm()
             .on_action(
                 cx.listener(|this, _: &Find, window, cx| this.command(Command::Find, window, cx)),
             )
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_move(
                 cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
-                    if matches!(
-                        this.drag,
-                        Some(
-                            Drag::Sidebar
-                                | Drag::Bottom
-                                | Drag::Modules { .. }
-                                | Drag::Components { .. }
-                        )
-                    ) || (this.drag.is_some() && !this.canvas_bounds.contains(&event.position))
-                    {
+                    if this.drag.is_some() && !this.canvas_bounds.contains(&event.position) {
                         this.mouse_move(event, window, cx);
                     }
                 }),
@@ -2346,13 +1434,16 @@ impl Render for GateApp {
                 cx.listener(|this, _: &Fit, window, cx| this.command(Command::Fit, window, cx)),
             )
             .on_action(cx.listener(|this, _: &ClassicTheme, window, cx| {
-                this.command(Command::SetTheme(crate::theme::Theme::Classic), window, cx)
+                this.command(Command::SetTheme(Theme::Classic), window, cx)
             }))
             .on_action(cx.listener(|this, _: &ModernTheme, window, cx| {
-                this.command(Command::SetTheme(crate::theme::Theme::Modern), window, cx)
+                this.command(Command::SetTheme(Theme::Modern), window, cx)
             }))
-            .on_action(cx.listener(|this, _: &DarkTheme, window, cx| {
-                this.command(Command::SetTheme(crate::theme::Theme::Dark), window, cx)
+            .on_action(cx.listener(|this, _: &LightAppearance, window, cx| {
+                this.command(Command::SetAppearance(Appearance::Light), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DarkAppearance, window, cx| {
+                this.command(Command::SetAppearance(Appearance::Dark), window, cx)
             }))
             .on_action(cx.listener(|this, _: &ToggleGrid, window, cx| {
                 this.command(Command::ToggleGrid, window, cx)
@@ -2377,13 +1468,7 @@ impl Render for GateApp {
             )
             .on_action(
                 cx.listener(|this, _: &Quit, window, cx| this.command(Command::Quit, window, cx)),
-            );
-        let content = if self.tab == WorkspaceTab::Interface {
-            self.interface(cx)
-        } else {
-            self.schematic(window, cx)
-        };
-        root = root
+            )
             .child(self.menu_bar(cx))
             .child(self.toolbar(cx))
             .child(
@@ -2391,88 +1476,9 @@ impl Render for GateApp {
                     .flex_1()
                     .min_h_0()
                     .min_w_0()
-                    .flex()
-                    .p(px(7.0))
-                    .child(self.sidebar(cx))
-                    .child(
-                        div()
-                            .id("sidebar-splitter")
-                            .debug_selector(|| "sidebar-splitter".into())
-                            .w(px(7.0))
-                            .flex_none()
-                            .cursor(CursorStyle::ResizeLeftRight)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.drag = Some(Drag::Sidebar);
-                                    cx.notify();
-                                }),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .min_h_0()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_h_0()
-                                    .flex()
-                                    .flex_col()
-                                    .border_1()
-                                    .border_color(rgb(self.theme.palette().shadow))
-                                    .child(self.workspace_tabs(cx))
-                                    .child(content),
-                            )
-                            .child(
-                                div()
-                                    .id("bottom-splitter")
-                                    .debug_selector(|| "bottom-splitter".into())
-                                    .h(px(6.0))
-                                    .flex_none()
-                                    .cursor(CursorStyle::ResizeUpDown)
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|this, _, _, cx| {
-                                            this.drag = Some(Drag::Bottom);
-                                            cx.notify();
-                                        }),
-                                    ),
-                            )
-                            .child(self.bottom_panel(cx)),
-                    )
-                    .child(
-                        div()
-                            .id("components-splitter")
-                            .debug_selector(|| "components-splitter".into())
-                            .w(px(7.0))
-                            .flex_none()
-                            .cursor(CursorStyle::ResizeLeftRight)
-                            .hover(|style| style.bg(rgb(self.theme.palette().shadow)))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
-                                    this.drag = Some(Drag::Components {
-                                        start_x: f32::from(event.position.x),
-                                        width: this.components_width,
-                                    });
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            ),
-                    )
-                    .child(self.component_sidebar(cx)),
+                    .child(self.panes(window, cx)),
             )
-            .child(self.status_bar());
-        if let Some(popup) = self.popup(cx) {
-            root = root.child(popup);
-        }
-        if let Some(dialog) = self.dialog(cx) {
-            root = root.child(dialog);
-        }
-        root
+            .child(self.status_bar())
+            .children(self.context_menu_layer())
     }
 }

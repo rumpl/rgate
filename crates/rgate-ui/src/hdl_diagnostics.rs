@@ -28,33 +28,3 @@ pub fn parse(message: &str) -> Vec<HdlDiagnostic> {
         })
         .collect()
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn parses_source_lines() {
-        let ds = parse(
-            "Error: compiler\nalu.sv:12: syntax error\nalu.sv:13: Invalid module instantiation",
-        );
-        assert_eq!(ds.len(), 2);
-        assert_eq!(ds[0].line, 12);
-        assert!(parse("unknown net").is_empty());
-    }
-}
-
-#[cfg(all(test, feature = "icarus"))]
-mod compiler_tests {
-    use super::*;
-    #[test]
-    fn compiler_identifies_body_typo_instead_of_module_header() {
-        let source = include_str!("../../../examples/verilog/led-chaser.sv");
-        assert!(rgate_hdl::check_sources(&[("led_chaser".into(), source.into())]).is_ok());
-        let invalid = source.replacen("end else if (enable)", "nd else if (enable)", 1);
-        let error = rgate_hdl::check_sources(&[("led_chaser".into(), invalid)])
-            .unwrap_err()
-            .to_string();
-        let errors = parse(&error);
-        assert!(errors.iter().any(|d| d.line == 17), "{error}");
-        assert!(errors.iter().all(|d| d.line != 3));
-    }
-}

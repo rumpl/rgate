@@ -20,13 +20,12 @@ rgate-hdl = { path = "../rgate-hdl", optional = true, features = ["icarus"] }
 rgate-format.workspace = true
 rgate-editor.workspace = true
 gpui.workspace = true
+gpui-base.workspace = true
+gpui-component.workspace = true
+gpui-kit-assets.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 serde.workspace = true
-unicode-segmentation.workspace = true
-
-[dev-dependencies]
-gpui = { workspace = true, features = ["test-support"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 gpui_web.workspace = true
@@ -36,5 +35,5 @@ js-sys = "0.3"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 gpui_platform.workspace = true
-gpui-component = { version = "=0.7.3", features = ["tree-sitter"] }
+gpui-component = { workspace = true, features = ["tree-sitter"] }
 tree-sitter-verilog = "1.0.3"

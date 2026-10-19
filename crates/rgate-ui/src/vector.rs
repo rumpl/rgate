@@ -85,20 +85,6 @@ impl Shape {
         shape
     }
 
-    pub fn reflected_x(mut self, width: f32) -> Self {
-        for segment in &mut self.segments {
-            match segment {
-                Segment::Move(p) | Segment::Line(p) => p.x = width - p.x,
-                Segment::Curve(p, control) => {
-                    p.x = width - p.x;
-                    control.x = width - control.x;
-                }
-                Segment::Close => {}
-            }
-        }
-        self
-    }
-
     pub fn paint(
         &self,
         transform: impl Fn(Point) -> gpui::Point<Pixels>,

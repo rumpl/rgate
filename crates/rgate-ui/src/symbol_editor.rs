@@ -7,6 +7,13 @@ use gpui::{
     AnyElement, App, Bounds, Context, MouseButton, Pixels, Window, canvas, div, point, prelude::*,
     px, rgb,
 };
+use gpui_component::{
+    ActiveTheme, Selectable as _, Sizable as _,
+    button::{Button, ButtonVariants as _},
+    h_flex,
+    input::Input,
+    v_flex,
+};
 use rgate_core::{Point, SymbolPrimitive};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -22,7 +29,7 @@ pub struct SymbolDialog {
     pub tool: SymbolTool,
     pub start: Option<Point>,
     pub bounds: Bounds<Pixels>,
-    pub text: gpui::Entity<crate::input::TextField>,
+    pub text: gpui::Entity<gpui_component::input::InputState>,
 }
 impl SymbolDialog {
     pub fn local(&self, point: gpui::Point<Pixels>) -> Point {
@@ -39,9 +46,9 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
         return div().into_any_element();
     };
     let shapes = dialog.shapes.clone();
-    let palette = app.theme.palette();
+    let palette = app.palette();
     let entity = cx.weak_entity();
-    let mut tools = div().flex().gap(px(5.0));
+    let mut tools = h_flex().gap_1();
     for (tool, label) in [
         (SymbolTool::Line, "Line"),
         (SymbolTool::Rectangle, "Rectangle"),
@@ -49,17 +56,10 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
         (SymbolTool::Text, "Text"),
     ] {
         tools = tools.child(
-            div()
-                .id(label)
-                .px(px(8.0))
-                .py(px(4.0))
-                .cursor_pointer()
-                .bg(rgb(if dialog.tool == tool {
-                    palette.accent
-                } else {
-                    palette.chrome
-                }))
-                .child(label)
+            Button::new(label)
+                .small()
+                .label(label)
+                .selected(dialog.tool == tool)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if let Some(Dialog::Symbol(dialog)) = &mut this.dialog {
                         dialog.tool = tool;
@@ -70,11 +70,12 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
         );
     }
     tools = tools
+        .child(div().flex_1())
         .child(
-            div()
-                .id("symbol-delete-last")
-                .cursor_pointer()
-                .child("Undo shape")
+            Button::new("symbol-delete-last")
+                .small()
+                .ghost()
+                .label("Undo shape")
                 .on_click(cx.listener(|this, _, _, cx| {
                     if let Some(Dialog::Symbol(dialog)) = &mut this.dialog {
                         dialog.shapes.pop();
@@ -83,10 +84,10 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
                 })),
         )
         .child(
-            div()
-                .id("symbol-clear")
-                .cursor_pointer()
-                .child("Clear")
+            Button::new("symbol-clear")
+                .small()
+                .ghost()
+                .label("Clear")
                 .on_click(cx.listener(|this, _, _, cx| {
                     if let Some(Dialog::Symbol(dialog)) = &mut this.dialog {
                         dialog.shapes.clear();
@@ -94,9 +95,12 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
                     cx.notify();
                 })),
         );
-    div().flex().flex_col().gap(px(8.0)).child(tools).child("Drag to draw. Origin is the center; coordinates snap to 5. Text is placed by clicking.")
-        .child(dialog.text.clone())
-        .child(div().id("symbol-editor-canvas").debug_selector(||"symbol-editor-canvas".into()).h(px(320.0)).w_full().bg(rgb(palette.panel))
+    let theme = cx.theme();
+    let (muted, border, radius) = (theme.muted_foreground, theme.border, theme.radius);
+    v_flex().gap_2().child(tools)
+        .child(div().text_color(muted).child("Drag to draw. Origin is the center; coordinates snap to 5. Text is placed by clicking."))
+        .child(Input::new(&dialog.text).small())
+        .child(div().id("symbol-editor-canvas").h(px(320.0)).w_full().bg(rgb(palette.panel)).border_1().border_color(border).rounded(radius).overflow_hidden()
             .child(canvas(move|bounds,_,cx|{let _=entity.update(cx,|app,_|{if let Some(Dialog::Symbol(dialog))=&mut app.dialog{dialog.bounds=bounds;}});},move|bounds,_,window,cx|{
                 let center=bounds.center();
                 stroke([point(bounds.left(),center.y),point(bounds.right(),center.y)],1.0,rgb(palette.grid).into(),true,window);
@@ -106,7 +110,7 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
             .on_mouse_down(MouseButton::Left,cx.listener(|this,event:&gpui::MouseDownEvent,_,cx|{
                 if let Some(Dialog::Symbol(dialog))=&mut this.dialog {
                     let local=dialog.local(event.position);
-                    if dialog.tool==SymbolTool::Text {dialog.shapes.push(SymbolPrimitive::Text {position:local,text:dialog.text.read(cx).value.clone()});}
+                    if dialog.tool==SymbolTool::Text {dialog.shapes.push(SymbolPrimitive::Text {position:local,text:dialog.text.read(cx).value().to_string()});}
                     else{dialog.start=Some(local);}
                 }
                 cx.stop_propagation();cx.notify();

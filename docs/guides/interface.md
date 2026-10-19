@@ -153,9 +153,10 @@ Scroll/trackpad scroll pans the schematic; Cmd/Ctrl-scroll zooms around the
 pointer. Native trackpad pinch zooms the view. P enters drag-to-pan; middle-drag
 also pans. `+`/`−` zoom, and Cmd/Ctrl-0 or **Fit** fits the current module.
 
-Choose **View → Theme: Classic / Modern / Dark**. Classic preserves the
-TkGate-style palette. Modern and Dark offer coordinated light and dark colors.
-Theme persists across sessions.
+Choose **View → Light appearance / Dark appearance** to switch the whole window
+between light and dark. Separately, **View → Canvas: Classic (TkGate) / Modern**
+sets how the schematic is drawn: Classic preserves the TkGate-style symbols and
+palette, Modern uses smoother symbols. Both choices persist across sessions.
 
 ## Messages
 

@@ -1,14 +1,20 @@
 use crate::live_simulation::LiveSimulation;
-use crate::{commands::Command, input::TextField, theme::Theme};
+use crate::{
+    commands::Command,
+    theme::{Appearance, Theme},
+};
 use anyhow::{Context as _, Result};
 use gpui::{
-    AppContext, Bounds, ClipboardItem, Context, Entity, FocusHandle, KeyDownEvent, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, ScrollWheelEvent, Task, Window, px,
+    Bounds, ClipboardItem, Context, Entity, FocusHandle, KeyDownEvent, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, ScrollWheelEvent, Subscription, Task, Window,
+    px,
 };
 #[cfg(not(target_family = "wasm"))]
 use gpui::{PathPromptOptions, PromptLevel};
+use gpui_component::input::{InputEvent, InputState, TextareaState};
+use gpui_component::{WindowExt as _, menu::PopupMenu};
 use rgate_core::{
-    Circuit, Direction, GateId, GateKind, Module, NetId, Point, Rect, Signal, demo, route_to,
+    Circuit, Direction, GateId, GateKind, Module, NetId, Point, Rect, Signal, route_to,
 };
 use rgate_editor::{Editor, Hit, Tool};
 use rgate_sim::Simulator;
@@ -21,10 +27,16 @@ pub enum WorkspaceTab {
     Simulate,
 }
 
-#[derive(Clone, Debug)]
-pub struct Popup {
-    pub menu: String,
-    pub position: Point,
+pub struct ContextMenu {
+    pub position: gpui::Point<Pixels>,
+    pub menu: Entity<PopupMenu>,
+    pub _dismiss: Subscription,
+}
+
+/// The GPUI Kit dialog currently mirroring `GateApp::dialog`.
+pub struct OpenDialog {
+    pub title: &'static str,
+    pub width: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -47,53 +59,43 @@ pub enum Drag {
         end: Point,
         additive: bool,
     },
-    Components {
-        start_x: f32,
-        width: f32,
-    },
-    Sidebar,
-    Modules {
-        start_y: f32,
-        height: f32,
-    },
-    Bottom,
 }
 
 pub struct PropertyDialog {
     pub gate: GateId,
-    pub name: Entity<TextField>,
-    pub value: Entity<TextField>,
-    pub delay: Entity<TextField>,
-    pub width: Entity<TextField>,
-    pub period: Entity<TextField>,
-    pub comment: Entity<TextField>,
+    pub name: Entity<InputState>,
+    pub value: Entity<InputState>,
+    pub delay: Entity<InputState>,
+    pub width: Entity<InputState>,
+    pub period: Entity<InputState>,
+    pub comment: Entity<InputState>,
     pub show_name: bool,
-    pub inputs: Entity<TextField>,
-    pub partitions: Entity<TextField>,
-    pub tap_offset: Entity<TextField>,
-    pub tap_width: Entity<TextField>,
-    pub address_bits: Entity<TextField>,
-    pub memory: Entity<TextField>,
+    pub inputs: Entity<InputState>,
+    pub partitions: Entity<InputState>,
+    pub tap_offset: Entity<InputState>,
+    pub tap_width: Entity<InputState>,
+    pub address_bits: Entity<InputState>,
+    pub memory: Entity<InputState>,
     pub led_display: rgate_core::LedDisplay,
     pub tty_tkgate: bool,
     pub reduction: bool,
     pub enable_low: bool,
     pub invert_output: bool,
-    pub phase: Entity<TextField>,
-    pub duty: Entity<TextField>,
-    pub operand_a: Entity<TextField>,
-    pub operand_b: Entity<TextField>,
-    pub frame_width: Entity<TextField>,
-    pub frame_height: Entity<TextField>,
-    pub module_width: Entity<TextField>,
-    pub custom_ports: Entity<TextField>,
+    pub phase: Entity<InputState>,
+    pub duty: Entity<InputState>,
+    pub operand_a: Entity<InputState>,
+    pub operand_b: Entity<InputState>,
+    pub frame_width: Entity<InputState>,
+    pub frame_height: Entity<InputState>,
+    pub module_width: Entity<InputState>,
+    pub custom_ports: Entity<InputState>,
     pub error: Option<String>,
 }
 
 pub struct NetDialog {
     pub net: NetId,
-    pub name: Entity<TextField>,
-    pub width: Entity<TextField>,
+    pub name: Entity<InputState>,
+    pub width: Entity<InputState>,
     pub show_name: bool,
     pub error: Option<String>,
 }
@@ -105,7 +107,7 @@ pub enum Dialog {
         error: Option<String>,
     },
     HdlSignals {
-        query: Entity<TextField>,
+        query: Entity<InputState>,
     },
     HdlTop {
         circuit: Circuit,
@@ -114,45 +116,45 @@ pub enum Dialog {
     },
     Verilog {
         creating: bool,
-        name: Entity<TextField>,
-        source: Entity<TextField>,
-        interface: Entity<TextField>,
+        name: Entity<InputState>,
+        source: Entity<TextareaState>,
+        interface: Entity<TextareaState>,
         error: Option<String>,
     },
     #[cfg_attr(not(feature = "icarus"), allow(dead_code))]
     HdlInput {
         net: NetId,
-        value: Entity<TextField>,
+        value: Entity<InputState>,
         error: Option<String>,
     },
     Vga {
         gate: GateId,
     },
     Find {
-        query: Entity<TextField>,
+        query: Entity<InputState>,
     },
     Recovery,
     Symbol(crate::symbol_editor::SymbolDialog),
     Input {
         gate: GateId,
-        value: Entity<TextField>,
+        value: Entity<InputState>,
         error: Option<String>,
     },
     Memory {
         gate: GateId,
-        address: Entity<TextField>,
-        value: Entity<TextField>,
+        address: Entity<InputState>,
+        value: Entity<InputState>,
         error: Option<String>,
     },
     Net(Box<NetDialog>),
     Terminal {
         gate: GateId,
-        input: Entity<TextField>,
+        input: Entity<InputState>,
         error: Option<String>,
     },
     Properties(Box<PropertyDialog>),
     NewModule {
-        name: Entity<TextField>,
+        name: Entity<InputState>,
         error: Option<String>,
     },
     Help,
@@ -177,17 +179,17 @@ pub struct GateApp {
     #[cfg(not(target_family = "wasm"))]
     pub source_editor: Option<crate::source_editor::SourceEditor>,
     pub theme: Theme,
+    pub appearance: Appearance,
     pub editor: Editor,
     pub file: Option<PathBuf>,
     pub focus: FocusHandle,
     pub simulation: Option<LiveSimulation>,
-    pub icarus_pwm: bool,
     pub debug_path: Option<String>,
     pub running: bool,
     pub tab: WorkspaceTab,
     pub bottom_scope: bool,
     pub waveform: crate::waveform::WaveformSettings,
-    pub waveform_search: Entity<TextField>,
+    pub waveform_search: Entity<InputState>,
     pub wave_bounds: Bounds<Pixels>,
     pub wave_drag: Option<crate::waveform_view::WaveDrag>,
     pub nets_ports: bool,
@@ -195,23 +197,25 @@ pub struct GateApp {
     pub collapsed_modules: std::collections::HashSet<String>,
     pub probes: BTreeSet<NetId>,
     pub messages: Vec<String>,
-    pub message_log: Entity<crate::message_log::MessageLog>,
+    pub message_log: Entity<TextareaState>,
     pub status: String,
     pub hover: Option<Hit>,
     pub input_swap: Option<(GateId, Option<String>)>,
     pub mouse: Point,
-    pub popup: Option<Popup>,
-    pub menu_bounds: Vec<Bounds<Pixels>>,
+    pub context_menu: Option<ContextMenu>,
     pub dialog: Option<Dialog>,
+    pub open_dialog: Option<OpenDialog>,
     pub drag: Option<Drag>,
     pub canvas_bounds: Bounds<Pixels>,
     pub sidebar_width: f32,
     pub components_width: f32,
-    pub component_search: Entity<TextField>,
+    pub component_search: Entity<InputState>,
     pub modules_height: f32,
-    pub sidebar_bounds: Bounds<Pixels>,
     pub bottom_height: f32,
+    pub layout: crate::view::PanelLayout,
     pub need_fit: bool,
+    /// The viewport produced by the last automatic fit, while the user has not moved it.
+    pub auto_fit: Option<rgate_editor::Viewport>,
     pub closing: bool,
     pub prompting: bool,
     pub persistence: Option<crate::workspace::Persistence>,
@@ -227,21 +231,26 @@ impl GateApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        cx.set_global(Theme::default());
         let focus = cx.focus_handle();
         focus.focus(window, cx);
-        let component_search =
-            cx.new(|cx| TextField::new("", cx).with_placeholder("Search components…"));
-        cx.observe(&component_search, |_, _, cx| cx.notify())
-            .detach();
-        let waveform_search =
-            cx.new(|cx| TextField::new("", cx).with_placeholder("Filter signals…"));
-        cx.observe(&waveform_search, |this, field, cx| {
-            this.waveform.filter = field.read(cx).value.clone();
-            this.waveform.row_offset = 0;
-            cx.notify();
+        let component_search = crate::input::search_field("Search components…", window, cx);
+        cx.subscribe(&component_search, |_, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
         })
         .detach();
+        let waveform_search = crate::input::search_field("Filter signals…", window, cx);
+        cx.subscribe(&waveform_search, |this, field, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.waveform.filter = field.read(cx).value().to_string();
+                this.waveform.row_offset = 0;
+                cx.notify();
+            }
+        })
+        .detach();
+        let message_log = crate::input::text_area("", window, cx);
+        let layout = crate::view::PanelLayout::new(cx);
         let mut this = Self {background_compilation:false,
             #[cfg(feature="icarus")]
             compilation:None,
@@ -254,15 +263,15 @@ impl GateApp {
             component_search,
             waveform:crate::waveform::WaveformSettings::default(),wave_bounds:Bounds::default(),wave_drag:None,
             persistence:None,workspace_views:std::collections::BTreeMap::new(),saved_probes:std::collections::BTreeSet::new(),
-            message_log:cx.new(crate::message_log::MessageLog::new),
-            theme: Theme::default(), editor: Editor::new(circuit).expect("startup circuit is validated"), file, focus,
-            simulation: None, icarus_pwm: false, debug_path: None, running: false, tab: WorkspaceTab::Edit, bottom_scope: false,
+            message_log, layout,
+            theme: Theme::default(), appearance: Appearance::default(), editor: Editor::new(circuit).expect("startup circuit is validated"), file, focus,
+            simulation: None, debug_path: None, running: false, tab: WorkspaceTab::Edit, bottom_scope: false,
             nets_ports: false, module_list: false, collapsed_modules: std::collections::HashSet::new(), probes: BTreeSet::new(),
             messages: vec!["RGate 0.1 — TkGate-style circuit editing, powered by Rust + GPUI.".into(),
                 "Click a tool to place gates. W connects pins; Space runs; double-click a wire probes it.".into()],
-            status: "Ready".into(), hover: None, input_swap: None, mouse: Point::ZERO, popup: None, menu_bounds: Vec::new(), dialog: None, drag: None,
-            canvas_bounds: Bounds::default(), sidebar_width: 210.0, components_width:205.0, modules_height:196.0, sidebar_bounds:Bounds::default(), bottom_height: 176.0,
-            need_fit: true, closing: false, prompting: false, timer: None,
+            status: "Ready".into(), hover: None, input_swap: None, mouse: Point::ZERO, context_menu: None, dialog: None, open_dialog: None, drag: None,
+            canvas_bounds: Bounds::default(), sidebar_width: 210.0, components_width:205.0, modules_height:196.0, bottom_height: 176.0,
+            need_fit: true, auto_fit: None, closing: false, prompting: false, timer: None,
         };
         let timer = cx.spawn(async move |entity, cx| {
             loop {
@@ -338,6 +347,21 @@ impl GateApp {
         cx.notify();
     }
 
+    pub fn palette(&self) -> crate::theme::Palette {
+        self.theme.palette(self.appearance)
+    }
+
+    pub fn set_appearance(
+        &mut self,
+        appearance: Appearance,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.appearance = appearance;
+        crate::view::apply_appearance(appearance, Some(window), cx);
+        window.refresh();
+    }
+
     pub fn log(&mut self, message: String) {
         self.status = message.clone();
         self.messages.push(message);
@@ -369,7 +393,7 @@ impl GateApp {
     }
 
     pub fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
-        self.popup = None;
+        self.context_menu = None;
         self.input_swap = None;
         if matches!(command, Command::LoadMemory)
             && matches!(self.dialog, Some(Dialog::Properties(_)))
@@ -406,10 +430,7 @@ impl GateApp {
         if self.dialog.is_some() {
             return;
         }
-        if matches!(
-            command,
-            Command::New | Command::Open | Command::Example(_) | Command::Quit
-        ) && self.editor.is_dirty()
+        if matches!(command, Command::New | Command::Open | Command::Quit) && self.editor.is_dirty()
         {
             #[cfg(target_family = "wasm")]
             {
@@ -456,59 +477,6 @@ impl GateApp {
         }
         match command {
             Command::New => self.replace_circuit(Circuit::default(), None),
-            Command::Example(name) => {
-                let result = if name == "full-adder" {
-                    Ok(rgate_format::ImportResult {
-                        circuit: demo::full_adder(),
-                        warnings: Vec::new(),
-                    })
-                } else if name == "adder8" {
-                    Ok(rgate_format::ImportResult {
-                        circuit: demo::hierarchical_adder(),
-                        warnings: Vec::new(),
-                    })
-                } else if name == "clocked" {
-                    Ok(rgate_format::ImportResult {
-                        circuit: demo::clocked_flip_flop(),
-                        warnings: Vec::new(),
-                    })
-                } else if name == "counter" {
-                    rgate_format::parse(include_str!("../../../examples/adjustable-counter.rgate"))
-                } else if name == "pwm-verilog" {
-                    rgate_format::parse(include_str!("../../../examples/pwm-verilog.rgate"))
-                } else if matches!(name, "pwm" | "pwm-icarus") {
-                    rgate_format::parse(include_str!("../../../examples/pwm-dimmer.rgate"))
-                } else if name == "tiny-vga" {
-                    rgate_format::parse(include_str!("../../../examples/tiny-vga.rgate"))
-                } else if name == "lc3" {
-                    rgate_format::parse(include_str!("../../../examples/lc3.rgate"))
-                } else if name == "bus-memory" {
-                    Ok(rgate_format::ImportResult {
-                        circuit: demo::bus_memory(),
-                        warnings: Vec::new(),
-                    })
-                } else if name == "hierarchy" {
-                    Ok(rgate_format::ImportResult {
-                        circuit: demo::hierarchical_inverters(),
-                        warnings: Vec::new(),
-                    })
-                } else {
-                    Err(anyhow::anyhow!("unknown example {name}"))
-                };
-                match result {
-                    Ok(result) => {
-                        self.replace_circuit(result.circuit, None);
-                        self.icarus_pwm = name == "pwm-icarus";
-                        if self.icarus_pwm {
-                            self.log("Experimental Icarus PWM selected. Start simulation to compile RTL; only the bundled unmodified circuit is supported.".into());
-                        }
-                        for warning in result.warnings {
-                            self.log(warning);
-                        }
-                    }
-                    Err(error) => self.error(error),
-                }
-            }
             Command::Open => self.open(window, cx),
             Command::Save => self.save(false, false, window, cx),
             Command::SaveAs => self.save(true, false, window, cx),
@@ -664,9 +632,9 @@ impl GateApp {
             Command::Fit => self.need_fit = true,
             Command::SetTheme(theme) => {
                 self.theme = theme;
-                cx.set_global(theme);
                 window.refresh();
             }
+            Command::SetAppearance(appearance) => self.set_appearance(appearance, window, cx),
             Command::ToggleGrid => self.editor.show_grid = !self.editor.show_grid,
             Command::ToggleSnap => self.editor.snap = !self.editor.snap,
             Command::ToggleScope => self.bottom_scope = !self.bottom_scope,
@@ -680,15 +648,18 @@ impl GateApp {
                     tool: crate::symbol_editor::SymbolTool::Line,
                     start: None,
                     bounds: Bounds::default(),
-                    text: cx.new(|cx| TextField::new("Label", cx)),
+                    text: crate::input::text_field("Label", window, cx),
                 }));
             }
             Command::Find => {
-                let query = cx.new(|cx| {
-                    TextField::new("", cx).with_placeholder("Gate/net name, type, or module…")
-                });
-                query.read(cx).focus_handle(cx).focus(window, cx);
-                cx.observe(&query, |_, _, cx| cx.notify()).detach();
+                let query =
+                    crate::input::search_field("Gate/net name, type, or module…", window, cx);
+                cx.subscribe(&query, |_, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        cx.notify();
+                    }
+                })
+                .detach();
                 self.dialog = Some(Dialog::Find { query });
             }
             Command::Align(alignment) => match self.editor.align_selection(alignment) {
@@ -736,11 +707,15 @@ impl GateApp {
             Command::VerilogInterface => self.edit_verilog(false, window, cx),
             Command::HdlSignals => {
                 if self.ensure_simulator() {
-                    self.dialog = Some(Dialog::HdlSignals {
-                        query: cx.new(|cx| {
-                            TextField::new("", cx).with_placeholder("Filter hierarchical signals…")
-                        }),
-                    });
+                    let query =
+                        crate::input::search_field("Filter hierarchical signals…", window, cx);
+                    cx.subscribe(&query, |_, _, event: &InputEvent, cx| {
+                        if matches!(event, InputEvent::Change) {
+                            cx.notify();
+                        }
+                    })
+                    .detach();
+                    self.dialog = Some(Dialog::HdlSignals { query });
                 }
             }
             Command::SetHdlInput => {
@@ -760,7 +735,7 @@ impl GateApp {
                     self.running = false;
                     self.dialog = Some(Dialog::HdlInput {
                         net,
-                        value: cx.new(|cx| TextField::new("0", cx)),
+                        value: crate::input::text_field("0", window, cx),
                         error: None,
                     });
                 } else {
@@ -779,8 +754,7 @@ impl GateApp {
                 {
                     index += 1;
                 }
-                let field = cx.new(|cx| TextField::new(format!("module{index}"), cx));
-                field.read(cx).focus_handle(cx).focus(window, cx);
+                let field = crate::input::text_field(format!("module{index}"), window, cx);
                 self.dialog = Some(Dialog::NewModule {
                     name: field,
                     error: None,
@@ -842,7 +816,6 @@ impl GateApp {
         self.load_document(circuit, path);
     }
     fn load_document(&mut self, circuit: Circuit, path: Option<PathBuf>) {
-        self.icarus_pwm = false;
         self.flush_workspace();
         match Editor::new(circuit) {
             Ok(editor) => {
@@ -946,14 +919,14 @@ impl GateApp {
         self.prompting = true;
         cx.spawn_in(window, async move |entity, cx| {
             let result = crate::browser::read_file(picker).await;
-            if let Err(error) = entity.update_in(cx, |this, _, cx| {
+            if let Err(error) = entity.update_in(cx, |this, window, cx| {
                 this.prompting = false;
                 let result: Result<()> = (|| {
                     if let Some((_, image)) = result?
                         && let Some(Dialog::Properties(dialog)) = &mut this.dialog
                     {
-                        let width = dialog.width.read(cx).value.parse()?;
-                        let address_bits = dialog.address_bits.read(cx).value.parse()?;
+                        let width = dialog.width.read(cx).value().parse()?;
+                        let address_bits = dialog.address_bits.read(cx).value().parse()?;
                         let words = rgate_core::parse_sparse_memory(&image, width, address_bits)
                             .map_err(anyhow::Error::msg)?;
                         let text = words
@@ -970,7 +943,7 @@ impl GateApp {
                             .join(" ");
                         dialog
                             .memory
-                            .update(cx, |field, cx| field.set_value(text, cx));
+                            .update(cx, |field, cx| field.set_value(text, window, cx));
                     }
                     Ok(())
                 })();
@@ -1123,23 +1096,6 @@ impl GateApp {
             {
                 Err(rgate_sim::SimError::Invalid(
                     "Verilog simulation requires the native icarus feature.".into(),
-                ))
-            }
-        } else if self.icarus_pwm {
-            #[cfg(feature = "icarus")]
-            {
-                if self.editor.active_module() != "main" {
-                    Err(rgate_sim::SimError::Invalid(
-                        "Start Icarus PWM from main, then navigate into dimmer.".into(),
-                    ))
-                } else {
-                    LiveSimulation::pwm(self.editor.circuit())
-                }
-            }
-            #[cfg(not(feature = "icarus"))]
-            {
-                Err(rgate_sim::SimError::Invalid(
-                    "This build does not include Icarus support.".into(),
                 ))
             }
         } else {
@@ -1393,15 +1349,15 @@ impl GateApp {
         self.prompting = true;
         cx.spawn_in(window, async move |entity, cx| {
             let result = paths.await;
-            if let Err(error) = entity.update_in(cx, |this, _, cx| {
+            if let Err(error) = entity.update_in(cx, |this, window, cx| {
                 this.prompting = false;
                 let result: Result<()> = (|| {
                     let paths = result??;
                     if let Some(path) = paths.and_then(|paths| paths.into_iter().next()) {
                         let image = std::fs::read_to_string(path)?;
                         if let Some(Dialog::Properties(dialog)) = &mut this.dialog {
-                            let width = dialog.width.read(cx).value.parse()?;
-                            let address_bits = dialog.address_bits.read(cx).value.parse()?;
+                            let width = dialog.width.read(cx).value().parse()?;
+                            let address_bits = dialog.address_bits.read(cx).value().parse()?;
                             let words =
                                 rgate_core::parse_sparse_memory(&image, width, address_bits)
                                     .map_err(anyhow::Error::msg)?;
@@ -1418,7 +1374,7 @@ impl GateApp {
                                 .collect::<Vec<_>>()
                                 .join(" ");
                             dialog.memory.update(cx, |field, cx| {
-                                field.set_value(contents, cx);
+                                field.set_value(contents, window, cx);
                             });
                         }
                     }
@@ -1437,7 +1393,12 @@ impl GateApp {
         .detach();
     }
 
-    pub fn select_led_display(&mut self, mode: rgate_core::LedDisplay, cx: &mut Context<Self>) {
+    pub fn select_led_display(
+        &mut self,
+        mode: rgate_core::LedDisplay,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(Dialog::Properties(dialog)) = &mut self.dialog {
             let connected = self
                 .editor
@@ -1447,7 +1408,7 @@ impl GateApp {
             dialog.led_display = mode;
             if !connected {
                 dialog.width.update(cx, |field, cx| {
-                    field.set_value(mode.recommended_width().to_string(), cx)
+                    field.set_value(mode.recommended_width().to_string(), window, cx)
                 });
             }
             dialog.error = None;
@@ -1501,12 +1462,11 @@ impl GateApp {
     pub fn show_properties(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(net) = self.editor.selected_net {
             if let Some(definition) = self.editor.module().net(net) {
-                let name = cx.new(|cx| TextField::new(&definition.name, cx));
-                name.read(cx).focus_handle(cx).focus(window, cx);
+                let name = crate::input::text_field(&definition.name, window, cx);
                 self.dialog = Some(Dialog::Net(Box::new(NetDialog {
                     net,
                     name,
-                    width: cx.new(|cx| TextField::new(definition.width.to_string(), cx)),
+                    width: crate::input::text_field(definition.width.to_string(), window, cx),
                     show_name: definition.show_name,
                     error: None,
                 })));
@@ -1520,93 +1480,98 @@ impl GateApp {
         let Some(gate) = self.editor.module().gate(id) else {
             return;
         };
-        let name = cx.new(|cx| TextField::new(&gate.name, cx));
-        name.read(cx).focus_handle(cx).focus(window, cx);
+        let name = crate::input::text_field(&gate.name, window, cx);
         self.dialog = Some(Dialog::Properties(Box::new(PropertyDialog {
             gate: id,
             name,
-            value: cx.new(|cx| TextField::new(gate.initial.display_value(), cx)),
-            delay: cx.new(|cx| TextField::new(gate.delay.to_string(), cx)),
-            width: cx.new(|cx| TextField::new(gate.width.to_string(), cx)),
-            period: cx.new(|cx| TextField::new(gate.period.to_string(), cx)),
-            comment: cx.new(|cx| TextField::new(gate.text.replace('\n', "\\n"), cx)),
+            value: crate::input::text_field(gate.initial.display_value(), window, cx),
+            delay: crate::input::text_field(gate.delay.to_string(), window, cx),
+            width: crate::input::text_field(gate.width.to_string(), window, cx),
+            period: crate::input::text_field(gate.period.to_string(), window, cx),
+            comment: crate::input::text_field(gate.text.replace('\n', "\\n"), window, cx),
             show_name: gate.show_name,
             led_display: gate.config.led_display,
             tty_tkgate: gate.config.tty_tkgate,
             reduction: gate.config.reduction || gate.kind.is_reduction(),
             enable_low: gate.config.enable_low,
             invert_output: gate.config.invert_output,
-            phase: cx.new(|cx| TextField::new(gate.config.clock_phase.to_string(), cx)),
-            duty: cx.new(|cx| TextField::new(gate.config.clock_duty.to_string(), cx)),
-            operand_a: cx.new(|cx| {
-                TextField::new(
-                    gate.config
-                        .operand_a_width
-                        .unwrap_or(gate.width)
-                        .to_string(),
-                    cx,
-                )
-            }),
-            operand_b: cx.new(|cx| {
-                TextField::new(
-                    gate.config
-                        .operand_b_width
-                        .unwrap_or(gate.width)
-                        .to_string(),
-                    cx,
-                )
-            }),
-            frame_width: cx.new(|cx| TextField::new(gate.config.frame_width.to_string(), cx)),
-            module_width: cx.new(|cx| TextField::new(gate.config.module_width.to_string(), cx)),
-            custom_ports: cx.new(|cx| {
-                TextField::new(
-                    serde_json::to_string(&gate.config.custom_ports)
-                        .unwrap_or_else(|_| "{}".into()),
-                    cx,
-                )
-            }),
-            frame_height: cx.new(|cx| TextField::new(gate.config.frame_height.to_string(), cx)),
-            inputs: cx.new(|cx| TextField::new(gate.input_count.to_string(), cx)),
-            partitions: cx.new(|cx| {
-                TextField::new(
-                    gate.config
-                        .partitions
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(","),
-                    cx,
-                )
-            }),
-            tap_offset: cx.new(|cx| TextField::new(gate.config.tap_offset.to_string(), cx)),
-            tap_width: cx.new(|cx| TextField::new(gate.config.tap_width.to_string(), cx)),
-            address_bits: cx.new(|cx| TextField::new(gate.config.address_bits.to_string(), cx)),
-            memory: cx.new(|cx| {
-                TextField::new(
-                    gate.config
-                        .memory
-                        .iter()
-                        .enumerate()
-                        .map(|(address, word)| (address as u64, word))
-                        .chain(
-                            gate.config
-                                .sparse_memory
-                                .iter()
-                                .map(|(address, word)| (u64::from(*address), word)),
+            phase: crate::input::text_field(gate.config.clock_phase.to_string(), window, cx),
+            duty: crate::input::text_field(gate.config.clock_duty.to_string(), window, cx),
+            operand_a: crate::input::text_field(
+                gate.config
+                    .operand_a_width
+                    .unwrap_or(gate.width)
+                    .to_string(),
+                window,
+                cx,
+            ),
+            operand_b: crate::input::text_field(
+                gate.config
+                    .operand_b_width
+                    .unwrap_or(gate.width)
+                    .to_string(),
+                window,
+                cx,
+            ),
+            frame_width: crate::input::text_field(gate.config.frame_width.to_string(), window, cx),
+            module_width: crate::input::text_field(
+                gate.config.module_width.to_string(),
+                window,
+                cx,
+            ),
+            custom_ports: crate::input::text_field(
+                serde_json::to_string(&gate.config.custom_ports).unwrap_or_else(|_| "{}".into()),
+                window,
+                cx,
+            ),
+            frame_height: crate::input::text_field(
+                gate.config.frame_height.to_string(),
+                window,
+                cx,
+            ),
+            inputs: crate::input::text_field(gate.input_count.to_string(), window, cx),
+            partitions: crate::input::text_field(
+                gate.config
+                    .partitions
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+                window,
+                cx,
+            ),
+            tap_offset: crate::input::text_field(gate.config.tap_offset.to_string(), window, cx),
+            tap_width: crate::input::text_field(gate.config.tap_width.to_string(), window, cx),
+            address_bits: crate::input::text_field(
+                gate.config.address_bits.to_string(),
+                window,
+                cx,
+            ),
+            memory: crate::input::text_field(
+                gate.config
+                    .memory
+                    .iter()
+                    .enumerate()
+                    .map(|(address, word)| (address as u64, word))
+                    .chain(
+                        gate.config
+                            .sparse_memory
+                            .iter()
+                            .map(|(address, word)| (u64::from(*address), word)),
+                    )
+                    .map(|(address, word)| {
+                        format!(
+                            "@{address:X} {}",
+                            word.to_biguint()
+                                .map(|value| value.to_str_radix(16))
+                                .unwrap_or_else(|| "x".into())
                         )
-                        .map(|(address, word)| {
-                            format!(
-                                "@{address:X} {}",
-                                word.to_biguint()
-                                    .map(|value| value.to_str_radix(16))
-                                    .unwrap_or_else(|| "x".into())
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                    cx,
-                )
-            }),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                window,
+                cx,
+            ),
             error: None,
         })));
         self.running = false;
@@ -1640,9 +1605,10 @@ impl GateApp {
             return;
         }
         if let Some(Dialog::Find { query }) = &self.dialog {
-            if let Some(result) = rgate_editor::search(self.editor.circuit(), &query.read(cx).value)
-                .into_iter()
-                .next()
+            if let Some(result) =
+                rgate_editor::search(self.editor.circuit(), &query.read(cx).value())
+                    .into_iter()
+                    .next()
             {
                 self.select_search_result(result, window, cx);
             }
@@ -1687,12 +1653,12 @@ impl GateApp {
                 interface,
                 ..
             }) => (|| {
-                let name = name.read(cx).value.trim().to_owned();
+                let name = name.read(cx).value().trim().to_owned();
                 if !crate::verilog_editor::identifier(&name) {
                     anyhow::bail!("Use a simple Verilog module name");
                 }
-                let source = source.read(cx).value.clone();
-                let observations = crate::verilog_editor::interface(&interface.read(cx).value)
+                let source = source.read(cx).value().to_string();
+                let observations = crate::verilog_editor::interface(&interface.read(cx).value())
                     .map_err(anyhow::Error::msg)?;
                 let mut existing = if *creating {
                     Vec::new()
@@ -1775,7 +1741,7 @@ impl GateApp {
                     let gate = sim.source_input(*net).context("Not an interactive input")?;
                     let width = sim.value(*net).context("Missing input")?.width();
                     let value =
-                        Signal::parse(value.read(cx).value.trim_start_matches("0x"), width, 16)
+                        Signal::parse(value.read(cx).value().trim_start_matches("0x"), width, 16)
                             .map_err(anyhow::Error::msg)?;
                     sim.set_input(gate, value)?;
                     Ok(())
@@ -1797,8 +1763,9 @@ impl GateApp {
                     .gate(*gate)
                     .context("Input no longer exists")?
                     .width;
-                let word = Signal::parse(value.read(cx).value.trim_start_matches("0x"), width, 16)
-                    .map_err(anyhow::Error::msg)?;
+                let word =
+                    Signal::parse(value.read(cx).value().trim_start_matches("0x"), width, 16)
+                        .map_err(anyhow::Error::msg)?;
                 self.simulation
                     .as_mut()
                     .context("Simulation inactive")?
@@ -1814,7 +1781,7 @@ impl GateApp {
                 let id = *gate;
                 let address: usize = address
                     .read(cx)
-                    .value
+                    .value()
                     .parse()
                     .context("Address must be a decimal number.")?;
 
@@ -1824,8 +1791,9 @@ impl GateApp {
                     .gate(id)
                     .context("Memory no longer exists.")?
                     .width;
-                let word = Signal::parse(value.read(cx).value.trim_start_matches("0x"), width, 16)
-                    .map_err(anyhow::Error::msg)?;
+                let word =
+                    Signal::parse(value.read(cx).value().trim_start_matches("0x"), width, 16)
+                        .map_err(anyhow::Error::msg)?;
                 let runtime_id =
                     runtime_dialog_gate.context("Memory is not in this live instance.")?;
                 self.simulation
@@ -1835,7 +1803,7 @@ impl GateApp {
                 Ok(())
             })(),
             Some(Dialog::Terminal { input, .. }) => {
-                let text = input.read(cx).value.clone();
+                let text = input.read(cx).value().to_string();
                 let runtime_id = runtime_dialog_gate;
                 self.simulation
                     .as_mut()
@@ -1850,14 +1818,14 @@ impl GateApp {
             }
             Some(Dialog::Net(dialog)) => (|| {
                 let id = dialog.net;
-                let name = dialog.name.read(cx).value.trim().to_owned();
+                let name = dialog.name.read(cx).value().trim().to_owned();
                 if name.is_empty() {
                     anyhow::bail!("Net name must not be empty.");
                 }
                 let width: u16 = dialog
                     .width
                     .read(cx)
-                    .value
+                    .value()
                     .parse()
                     .context("Width must be 1–4096.")?;
                 if !(1..=4096).contains(&width) {
@@ -1889,7 +1857,7 @@ impl GateApp {
             {
                 (|| {
                     let id = dialog.gate;
-                    let name = dialog.name.read(cx).value.trim().to_owned();
+                    let name = dialog.name.read(cx).value().trim().to_owned();
                     if name.is_empty() {
                         anyhow::bail!("Name must not be empty.");
                     }
@@ -1898,13 +1866,13 @@ impl GateApp {
                         let width: f32 = dialog
                             .frame_width
                             .read(cx)
-                            .value
+                            .value()
                             .parse()
                             .context("Frame width must be numeric.")?;
                         let height: f32 = dialog
                             .frame_height
                             .read(cx)
-                            .value
+                            .value()
                             .parse()
                             .context("Frame height must be numeric.")?;
                         if !width.is_finite()
@@ -1918,7 +1886,7 @@ impl GateApp {
                     } else {
                         None
                     };
-                    let title = dialog.comment.read(cx).value.replace("\\n", "\n");
+                    let title = dialog.comment.read(cx).value().replace("\\n", "\n");
                     let show_name = dialog.show_name;
                     self.editor.edit_module(|module| {
                         let gate = module.gate_mut(id).expect("selected annotation exists");
@@ -1935,7 +1903,7 @@ impl GateApp {
             }
             Some(Dialog::Properties(dialog)) => (|| {
                 let id = dialog.gate;
-                let name = dialog.name.read(cx).value.trim().to_owned();
+                let name = dialog.name.read(cx).value().trim().to_owned();
                 if name.is_empty() {
                     anyhow::bail!("Name must not be empty.");
                 }
@@ -1949,7 +1917,7 @@ impl GateApp {
                     let width: u16 = dialog
                         .width
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Width must be a number from 1 to 4096.")?;
                     if !(1..=4096).contains(&width) {
@@ -1977,7 +1945,7 @@ impl GateApp {
                     );
                 }
                 let value = if fields.initial {
-                    let value = dialog.value.read(cx).value.clone();
+                    let value = dialog.value.read(cx).value().to_string();
                     if let Some(hex) = value.strip_prefix("0x") {
                         Signal::parse(hex, width, 16)
                     } else {
@@ -1991,7 +1959,7 @@ impl GateApp {
                     dialog
                         .delay
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Delay must be a nonnegative number.")?
                 } else {
@@ -2001,7 +1969,7 @@ impl GateApp {
                     dialog
                         .period
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Period must be a number.")?
                 } else {
@@ -2026,13 +1994,13 @@ impl GateApp {
                     config.clock_phase = dialog
                         .phase
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Phase must be nonnegative nanoseconds.")?;
                     config.clock_duty = dialog
                         .duty
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Duty must be 1–99 percent.")?;
                 }
@@ -2040,11 +2008,12 @@ impl GateApp {
                     config.module_width = dialog
                         .module_width
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Module width must be numeric")?;
-                    config.custom_ports = serde_json::from_str(&dialog.custom_ports.read(cx).value)
-                        .context("Port positions must be JSON: {\"A\":{\"x\":-50,\"y\":0}}")?;
+                    config.custom_ports =
+                        serde_json::from_str(&dialog.custom_ports.read(cx).value())
+                            .context("Port positions must be JSON: {\"A\":{\"x\":-50,\"y\":0}}")?;
                     for name in config.custom_ports.keys() {
                         if gate.pin(name).is_none() {
                             anyhow::bail!("Unknown port {name}");
@@ -2052,14 +2021,14 @@ impl GateApp {
                     }
                 }
                 if matches!(gate.kind, GateKind::Multiply | GateKind::Divide) {
-                    config.operand_a_width = Some(dialog.operand_a.read(cx).value.parse()?);
-                    config.operand_b_width = Some(dialog.operand_b.read(cx).value.parse()?);
+                    config.operand_a_width = Some(dialog.operand_a.read(cx).value().parse()?);
+                    config.operand_b_width = Some(dialog.operand_b.read(cx).value().parse()?);
                 }
                 let inputs = if fields.count {
                     dialog
                         .inputs
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Input/output count must be 1–64.")?
                 } else {
@@ -2069,7 +2038,7 @@ impl GateApp {
                     config.partitions = dialog
                         .partitions
                         .read(cx)
-                        .value
+                        .value()
                         .split(',')
                         .filter(|part| !part.trim().is_empty())
                         .map(|part| part.trim().parse::<u16>())
@@ -2080,13 +2049,13 @@ impl GateApp {
                     config.tap_offset = dialog
                         .tap_offset
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Tap offset must be a number.")?;
                     config.tap_width = dialog
                         .tap_width
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Tap width must be a number.")?;
                 }
@@ -2094,11 +2063,11 @@ impl GateApp {
                     config.address_bits = dialog
                         .address_bits
                         .read(cx)
-                        .value
+                        .value()
                         .parse()
                         .context("Address bits must be 1–32.")?;
                     config.sparse_memory = rgate_core::parse_sparse_memory(
-                        &dialog.memory.read(cx).value,
+                        &dialog.memory.read(cx).value(),
                         width,
                         config.address_bits,
                     )
@@ -2188,7 +2157,7 @@ impl GateApp {
             })(),
             Some(Dialog::NewModule { name, .. }) => self
                 .editor
-                .create_module(name.read(cx).value.trim().to_owned())
+                .create_module(name.read(cx).value().trim().to_owned())
                 .map_err(Into::into),
             _ => Ok(()),
         };
@@ -2243,7 +2212,7 @@ impl GateApp {
         cx: &mut Context<Self>,
     ) {
         if self.dialog.is_some()
-            || self.popup.is_some()
+            || self.context_menu.is_some()
             || self.prompting
             || self.tab == WorkspaceTab::Interface
             || !self.canvas_bounds.contains(&position)
@@ -2271,7 +2240,7 @@ impl GateApp {
         cx: &mut Context<Self>,
     ) {
         self.focus.focus(window, cx);
-        self.popup = None;
+        self.context_menu = None;
         let point = self.canvas_point(event.position);
         let hit = self.editor.hit_test(point, 4.5 / self.editor.viewport.zoom);
         if let Some((id, first)) = self.input_swap.clone() {
@@ -2375,10 +2344,7 @@ impl GateApp {
                     self.editor.selected_net = None;
                 }
             }
-            self.popup = Some(Popup {
-                menu: "Canvas".into(),
-                position: Point::new(f32::from(event.position.x), f32::from(event.position.y)),
-            });
+            self.open_canvas_menu(event.position, window, cx);
             cx.notify();
             return;
         }
@@ -2421,12 +2387,11 @@ impl GateApp {
                             .gate(id)
                             .is_some_and(|gate| matches!(gate.kind, GateKind::Ram | GateKind::Rom))
                     {
-                        let address = cx.new(|cx| TextField::new("0", cx));
-                        address.read(cx).focus_handle(cx).focus(window, cx);
+                        let address = crate::input::text_field("0", window, cx);
                         self.dialog = Some(Dialog::Memory {
                             gate: id,
                             address,
-                            value: cx.new(|cx| TextField::new("00", cx)),
+                            value: crate::input::text_field("00", window, cx),
                             error: None,
                         });
                         self.running = false;
@@ -2440,8 +2405,7 @@ impl GateApp {
                             .gate(id)
                             .is_some_and(|gate| gate.kind == GateKind::Tty)
                     {
-                        let input = cx.new(|cx| TextField::new("", cx));
-                        input.read(cx).focus_handle(cx).focus(window, cx);
+                        let input = crate::input::text_field("", window, cx);
                         self.dialog = Some(Dialog::Terminal {
                             gate: id,
                             input,
@@ -2464,8 +2428,7 @@ impl GateApp {
                             .gate_value(runtime)
                             .map(|value| value.display_value().trim_start_matches("0x").to_owned())
                             .unwrap_or_else(|| "0".into());
-                        let field = cx.new(|cx| TextField::new(value, cx));
-                        field.read(cx).focus_handle(cx).focus(window, cx);
+                        let field = crate::input::text_field(value, window, cx);
                         self.dialog = Some(Dialog::Input {
                             gate: id,
                             value: field,
@@ -2658,23 +2621,6 @@ impl GateApp {
                     additive,
                 })
             }
-            Some(Drag::Modules { start_y, height }) if event.dragging() => {
-                let maximum = (f32::from(self.sidebar_bounds.size.height) - 110.0).max(80.0);
-                self.modules_height = (height + screen.y - start_y).clamp(80.0, maximum);
-            }
-            Some(Drag::Components { start_x, width }) if event.dragging() => {
-                let available = f32::from(self.canvas_bounds.size.width) + self.components_width;
-                let maximum = (available - 200.0).clamp(150.0, 600.0);
-                self.components_width = (width + start_x - screen.x).clamp(150.0, maximum);
-            }
-            Some(Drag::Sidebar) if event.dragging() => {
-                self.sidebar_width = (screen.x - 8.0).clamp(150.0, 400.0)
-            }
-            Some(Drag::Bottom) if event.dragging() => {
-                self.bottom_height = (f32::from(self.canvas_bounds.bottom()) + self.bottom_height
-                    - screen.y)
-                    .clamp(80.0, 380.0);
-            }
             _ => {}
         }
         self.hover = self.editor.hit_test(world, 4.5 / self.editor.viewport.zoom);
@@ -2706,7 +2652,7 @@ impl GateApp {
     }
 
     pub fn scroll(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.dialog.is_some() || self.popup.is_some() {
+        if self.dialog.is_some() || self.context_menu.is_some() {
             cx.stop_propagation();
             return;
         }
@@ -2726,7 +2672,7 @@ impl GateApp {
 
     pub fn pinch(&mut self, event: &PinchEvent, _: &mut Window, cx: &mut Context<Self>) {
         cx.stop_propagation();
-        if self.dialog.is_some() || self.popup.is_some() || self.prompting {
+        if self.dialog.is_some() || self.context_menu.is_some() || self.prompting {
             return;
         }
         let factor = 1.0 + event.delta;
@@ -2757,61 +2703,27 @@ impl GateApp {
     }
 
     pub fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self
-            .waveform_search
-            .read(cx)
-            .focus_handle(cx)
-            .is_focused(window)
-            && self.dialog.is_none()
-        {
-            if event.keystroke.key == "escape" {
-                self.waveform_search
-                    .update(cx, |field, cx| field.set_value(String::new(), cx));
-                self.focus.focus(window, cx);
-            }
+        if self.dialog.is_some() {
             return;
         }
-        if self
-            .message_log
-            .read(cx)
-            .focus_handle(cx)
-            .is_focused(window)
-            && self.dialog.is_none()
-        {
-            return;
-        }
-        if self
-            .component_search
-            .read(cx)
-            .focus_handle(cx)
-            .is_focused(window)
-            && self.dialog.is_none()
-        {
+        if window.has_focused_input(cx) {
             if event.keystroke.key == "escape" {
-                self.component_search
-                    .update(cx, |field, cx| field.set_value(String::new(), cx));
-                self.focus.focus(window, cx);
-            } else if event.keystroke.key == "enter" {
+                for search in [self.waveform_search.clone(), self.component_search.clone()] {
+                    if search.read(cx).focus_handle(cx).is_focused(window) {
+                        search.update(cx, |field, cx| field.set_value("", window, cx));
+                        self.focus.focus(window, cx);
+                    }
+                }
+            } else if event.keystroke.key == "enter"
+                && self
+                    .component_search
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
+            {
                 self.focus.focus(window, cx);
             }
             cx.notify();
-            return;
-        }
-
-        #[cfg(not(target_family = "wasm"))]
-        if self.source_editor_focused(window, cx) && self.dialog.is_none() {
-            return;
-        }
-        if self.dialog.is_some() {
-            match event.keystroke.key.as_str() {
-                "escape" => {
-                    self.dismiss_dialog(window, cx);
-                }
-                "enter" if !matches!(self.dialog, Some(Dialog::Verilog { .. })) => {
-                    self.apply_dialog(window, cx)
-                }
-                _ => {}
-            }
             return;
         }
         if event.keystroke.modifiers.platform || event.keystroke.modifiers.control {
@@ -2823,7 +2735,7 @@ impl GateApp {
                 self.editor.cancel();
                 self.input_swap = None;
                 self.status = "Ready".into();
-                self.popup = None;
+                self.context_menu = None;
                 self.drag = None;
                 cx.notify();
                 return;
@@ -2925,7 +2837,7 @@ impl GateApp {
         };
         crate::canvas::Scene {
             theme: self.theme,
-            palette: self.theme.palette(),
+            palette: self.palette(),
             module: self.editor.module().clone(),
             viewport: self.editor.viewport.clone(),
             selection: self.editor.selection.clone(),

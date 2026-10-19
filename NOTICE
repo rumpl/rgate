@@ -48,9 +48,10 @@ Exact revisions and downloaded-file SHA-256 hashes are in examples/verilog/sourc
 The optional xezim dependency is pinned in crates/rgate-hdl/Cargo.toml;
 its upstream license is retained by Cargo's source checkout (Apache-2.0 LICENSE).
 
-Native code editor: gpui-component 0.7.1 and gpui-base 0.7.1 from
-https://github.com/longbridge/gpui-kit, Apache-2.0. Published crates.io
-packages; no vendored component code or Zed internal editor dependencies.
+User interface components and code editor: GPUI Kit (gpui-component, gpui-base
+and gpui-kit-assets 0.7.3) from https://github.com/longbridge/gpui-kit,
+Apache-2.0. Published crates.io packages; no vendored component code or Zed
+internal editor dependencies.
 Verilog grammar: tree-sitter-verilog 1.0.3 (MIT, Cargo dependency).
 
 GPUI Kit bundled icons

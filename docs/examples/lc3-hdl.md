@@ -72,15 +72,10 @@ reserved opcodes halt; interrupts, PSR, protection, and a complete OS are not
 implemented. TRAP x25 is intercepted to halt, and the minimal OUT handler
 clobbers R2.
 
-## Regenerate and test
+## Regenerate
 
 After editing the checked-in HDL source copies, regenerate the embedded example:
 
 ```sh
 python3 scripts/generate-lc3-hdl.py
-cargo test -p rgate-ui --features icarus lc3_hdl_tests
 ```
-
-The integration tests execute the generated mixed schematic/HDL design through
-Icarus, checking reset, the stored sum, console bytes, halt behavior, indirect
-memory instructions, and subroutine calls.

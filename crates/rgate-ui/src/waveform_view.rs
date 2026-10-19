@@ -5,7 +5,14 @@ use crate::{
 };
 use gpui::{
     AnyElement, Context, CursorStyle, MouseButton, Pixels, SharedString, Window, canvas, div,
-    prelude::*, px, rgb,
+    prelude::*, px,
+};
+use gpui_component::{
+    ActiveTheme, Selectable as _, Sizable as _,
+    button::{Button, ButtonVariants as _},
+    h_flex,
+    input::Input,
+    separator::Separator,
 };
 use rgate_sim::Trace;
 
@@ -47,46 +54,40 @@ impl GateApp {
         active: bool,
         cx: &mut Context<Self>,
         callback: impl Fn(&mut GateApp, &mut Window, &mut Context<GateApp>) + 'static,
-    ) -> AnyElement {
-        div()
-            .id(id)
-            .debug_selector(move || id.into())
-            .px(px(6.0))
-            .h(px(24.0))
-            .flex()
-            .items_center()
-            .cursor_pointer()
-            .bg(rgb(if active {
-                self.theme.palette().selection
-            } else {
-                self.theme.palette().chrome
-            }))
-            .child(label)
+    ) -> Button {
+        Button::new(id)
+            .ghost()
+            .xsmall()
+            .label(label)
+            .selected(active)
             .on_click(cx.listener(move |this, _, window, cx| {
                 callback(this, window, cx);
                 cx.notify();
             }))
-            .into_any_element()
     }
-    pub fn waveform_panel(&self, cx: &mut Context<Self>) -> AnyElement {
-        if self.waveform_search.read(cx).value != self.waveform.filter {
+    pub fn waveform_panel(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.waveform_search.read(cx).value().as_ref() != self.waveform.filter {
             let filter = self.waveform.filter.clone();
             self.waveform_search
-                .update(cx, |field, cx| field.set_value(filter, cx));
+                .update(cx, |field, cx| field.set_value(filter, window, cx));
         }
         let traces = self.waveform_traces();
         let time = self.wave_time();
         let state = self.waveform.clone();
-        let palette = self.theme.palette();
+        let palette = self.palette();
         let entity = cx.weak_entity();
-        let mut toolbar = div()
+        let selected_radix = self
+            .waveform
+            .selected
+            .as_ref()
+            .map(|name| self.waveform.radix(name));
+        let mut toolbar = h_flex()
             .id("wave-toolbar")
             .overflow_x_scroll()
-            .flex()
             .flex_none()
-            .h(px(27.0))
-            .items_center()
-            .gap(px(3.0))
+            .h(px(30.0))
+            .px_1()
+            .gap_0p5()
             .child(
                 self.wave_button("wave-zoom-in", "+".into(), false, cx, |this, _, _| {
                     this.waveform.zoom(0.5, 0.5, this.wave_time())
@@ -129,13 +130,14 @@ impl GateApp {
                     this.waveform.move_selected(false, &this.waveform_traces())
                 }),
             );
+        toolbar = toolbar.child(Separator::vertical().h(px(14.0)).mx_1());
         for radix in Radix::ALL {
             toolbar = toolbar.child(
-                div()
-                    .id(SharedString::from(format!("wave-radix-{radix:?}")))
-                    .px(px(4.0))
-                    .cursor_pointer()
-                    .child(radix.label())
+                Button::new(SharedString::from(format!("wave-radix-{radix:?}")))
+                    .ghost()
+                    .xsmall()
+                    .label(radix.label())
+                    .selected(selected_radix == Some(radix))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if let Some(name) = &this.waveform.selected {
                             this.waveform.radices.insert(name.clone(), radix);
@@ -145,6 +147,7 @@ impl GateApp {
             );
         }
         toolbar = toolbar
+            .child(Separator::vertical().h(px(14.0)).mx_1())
             .child(self.wave_button(
                 "wave-clear-cursors",
                 "Clear A/B".into(),
@@ -215,9 +218,26 @@ impl GateApp {
             .flex_1()
             .min_h_0()
             .child(toolbar)
-            .child(div().flex_none().h(px(28.0)).flex().items_center().gap(px(6.0))
-                .child(div().w(px(180.0)).flex_none().child(self.waveform_search.clone()))
-                .child(div().text_size(px(10.0)).truncate().child("Click: A · Shift-click: B · Ctrl/⌘-scroll: zoom · Shift-scroll/middle-drag: pan")))
+            .child(
+                h_flex()
+                    .flex_none()
+                    .px_1()
+                    .pb_1()
+                    .gap_2()
+                    .child(
+                        div()
+                            .w(px(180.0))
+                            .flex_none()
+                            .child(Input::new(&self.waveform_search).xsmall().cleanable(true)),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .truncate()
+                            .child("Click: A · Shift-click: B · Ctrl/⌘-scroll: zoom · Shift-scroll/middle-drag: pan"),
+                    ),
+            )
             .child(
                 div()
                     .id("wave-canvas")
@@ -368,8 +388,9 @@ impl GateApp {
                 div()
                     .h(px(20.0))
                     .flex_none()
-                    .px(px(6.0))
-                    .text_size(px(10.0))
+                    .px_2()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
                     .truncate()
                     .child(status),
             )

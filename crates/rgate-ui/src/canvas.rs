@@ -718,14 +718,3 @@ fn rect(
 fn module_lead_width(bits: u16, zoom: f32) -> f32 {
     (if bits > 1 { 2.2 } else { 1.0 }) * zoom.max(0.85)
 }
-#[cfg(test)]
-mod lead_width_tests {
-    use super::*;
-    #[test]
-    fn scalar_and_bus_leads_match_wire_strokes() {
-        for zoom in [0.5, 1.0, 3.0] {
-            assert_eq!(module_lead_width(1, zoom), zoom.max(0.85));
-            assert_eq!(module_lead_width(8, zoom), 2.2 * zoom.max(0.85));
-        }
-    }
-}

@@ -1,18 +1,32 @@
-use gpui::{Div, Global, Hsla, div, prelude::*, px, rgb};
+use gpui::{Hsla, rgb};
 
+/// Drawing style of the schematic canvas. The surrounding chrome always uses
+/// GPUI Kit, so this only affects gates, wires and the drawing surface.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Theme {
     #[default]
     Classic,
+    // Older preference files stored the dark palette as its own theme.
+    #[serde(alias = "Dark")]
     Modern,
+}
+
+/// Light or dark application appearance, shared by GPUI Kit and the canvas.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Appearance {
+    #[default]
+    Light,
     Dark,
 }
 
-impl Global for Theme {}
+impl Appearance {
+    pub fn is_dark(self) -> bool {
+        self == Self::Dark
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Palette {
-    pub chrome: u32,
     pub light: u32,
     pub shadow: u32,
     pub panel: u32,
@@ -31,16 +45,12 @@ pub struct Palette {
     pub grid: u32,
     pub selected_wire: u32,
     pub module: u32,
-    pub error: u32,
-    pub radius: f32,
-    pub font: &'static str,
 }
 
 impl Theme {
-    pub fn palette(self) -> Palette {
-        match self {
-            Self::Classic => Palette {
-                chrome: 0xd9d9d9,
+    pub fn palette(self, appearance: Appearance) -> Palette {
+        match (self, appearance) {
+            (Self::Classic, Appearance::Light) => Palette {
                 light: 0xf5f5f5,
                 shadow: 0x858585,
                 panel: 0xffffff,
@@ -59,12 +69,28 @@ impl Theme {
                 grid: 0xcccccc,
                 selected_wire: 0xf08000,
                 module: 0x8b008b,
-                error: 0xa00000,
-                radius: 0.0,
-                font: "Helvetica",
             },
-            Self::Modern => Palette {
-                chrome: 0xf1f5f9,
+            (Self::Classic, Appearance::Dark) => Palette {
+                light: 0x1c1c1c,
+                shadow: 0x5a5a5a,
+                panel: 0x121212,
+                text: 0xe6e6e6,
+                muted: 0x9a9a9a,
+                accent: 0x3a3a5c,
+                hover: 0x262626,
+                selection: 0x2e2e66,
+                gate: 0x7a8cff,
+                wire: 0x3ccf3c,
+                bus: 0xff5a5a,
+                low: 0xf070f0,
+                high: 0x3ccf3c,
+                unknown: 0xff6060,
+                float: 0x7a8cff,
+                grid: 0x2c2c2c,
+                selected_wire: 0xffa040,
+                module: 0xd47ad4,
+            },
+            (Self::Modern, Appearance::Light) => Palette {
                 light: 0xf8fafc,
                 shadow: 0xcbd5e1,
                 panel: 0xffffff,
@@ -83,12 +109,8 @@ impl Theme {
                 grid: 0xe2e8f0,
                 selected_wire: 0xea580c,
                 module: 0x7c3aed,
-                error: 0xb91c1c,
-                radius: 6.0,
-                font: ".SystemUIFont",
             },
-            Self::Dark => Palette {
-                chrome: 0x1e293b,
+            (Self::Modern, Appearance::Dark) => Palette {
                 light: 0x182436,
                 shadow: 0x334155,
                 panel: 0x0f172a,
@@ -107,23 +129,12 @@ impl Theme {
                 grid: 0x293548,
                 selected_wire: 0xfbbf24,
                 module: 0xc4b5fd,
-                error: 0xfda4af,
-                radius: 6.0,
-                font: ".SystemUIFont",
             },
         }
     }
 }
 
 impl Palette {
-    pub fn sunken(self) -> Div {
-        div()
-            .bg(rgb(self.panel))
-            .border_1()
-            .border_color(rgb(self.shadow))
-            .rounded(px(self.radius))
-    }
-
     pub fn signal_color(self, signal: &rgate_core::Signal) -> Hsla {
         use rgate_core::Logic;
         rgb(if signal.bits().contains(&Logic::Unknown) {

@@ -1,8 +1,5 @@
-use crate::{
-    app::{Dialog, GateApp},
-    input::TextField,
-};
-use gpui::{AppContext, Context, Focusable, Window};
+use crate::app::{Dialog, GateApp};
+use gpui::{Context, Window};
 use rgate_core::{Direction, Net, NetId};
 
 pub const TEMPLATE: &str = "`timescale 1ns/1ps\nmodule MODULE(input wire clk, input wire reset, input wire enable, output reg [7:0] count);\n    always @(posedge clk)\n        if (reset) count <= 0;\n        else if (enable) count <= count + 1;\nendmodule\n";
@@ -102,13 +99,12 @@ impl GateApp {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        let source = cx.new(|cx| TextField::new(source, cx).multiline());
-        source.read(cx).focus_handle(cx).focus(window, cx);
+        let source = crate::input::text_area(source, window, cx);
         self.dialog = Some(Dialog::Verilog {
             creating,
-            name: cx.new(|cx| TextField::new(name, cx)),
+            name: crate::input::text_field(name, window, cx),
             source,
-            interface: cx.new(|cx| TextField::new(interface, cx).multiline()),
+            interface: crate::input::text_area(interface, window, cx),
             error: None,
         });
         cx.notify();

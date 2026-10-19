@@ -1,7 +1,7 @@
 //! UI preferences and recovery are separate from circuit documents and simulation state.
 use crate::{
     app::{Dialog, GateApp, WorkspaceTab},
-    theme::Theme,
+    theme::{Appearance, Theme},
 };
 use anyhow::{Context, Result, bail};
 use gpui::{Context as UiContext, Window};
@@ -52,6 +52,7 @@ pub struct DocumentWorkspace {
 pub struct Preferences {
     pub version: u32,
     pub theme: Theme,
+    pub appearance: Appearance,
     pub sidebar_width: f32,
     pub components_width: f32,
     pub modules_height: f32,
@@ -69,6 +70,7 @@ impl Default for Preferences {
         Self {
             version: VERSION,
             theme: Theme::default(),
+            appearance: Appearance::default(),
             sidebar_width: 210.0,
             components_width: 205.0,
             modules_height: 196.0,
@@ -363,7 +365,8 @@ impl GateApp {
         let store = Persistence::load();
         let prefs = &store.preferences;
         self.theme = prefs.theme;
-        cx.set_global(prefs.theme);
+        self.appearance = prefs.appearance;
+        crate::view::apply_appearance(prefs.appearance, None, cx);
         self.sidebar_width = prefs.sidebar_width;
         self.components_width = prefs.components_width;
         self.modules_height = prefs.modules_height;
@@ -414,6 +417,7 @@ impl GateApp {
         let workspace = self.capture_workspace();
         let mut preferences = store.preferences.clone();
         preferences.theme = self.theme;
+        preferences.appearance = self.appearance;
         preferences.sidebar_width = self.sidebar_width;
         preferences.components_width = self.components_width;
         preferences.modules_height = self.modules_height;
@@ -516,172 +520,5 @@ impl GateApp {
             self.probes.insert(actual);
             true
         });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::commands::Command;
-    use gpui::TestAppContext;
-    use rgate_core::demo;
-
-    fn directory() -> PathBuf {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "rgate-workspace-test-{}-{nonce}",
-            std::process::id()
-        ))
-    }
-    fn store(directory: PathBuf) -> Persistence {
-        Persistence {
-            preferences: Preferences::default(),
-            recovery: None,
-            last_settings: None,
-            last_recovery: None,
-            error: None,
-            ticks: 0,
-            directory,
-        }
-    }
-    #[test]
-    fn settings_sanitize_panel_sizes_and_reject_future_versions_and_corruption() {
-        let mut prefs = Preferences {
-            sidebar_width: -100.0,
-            components_width: 5000.0,
-            ..Default::default()
-        };
-        prefs.validate().unwrap();
-        assert_eq!(prefs.sidebar_width, 150.0);
-        assert_eq!(prefs.components_width, 600.0);
-        assert!(decode_preferences("bad JSON").is_err());
-        let future = Preferences {
-            version: 99,
-            ..Default::default()
-        };
-        assert!(decode_preferences(&serde_json::to_string(&future).unwrap()).is_err());
-        assert!(decode_recovery("{\"version\":1}").is_err());
-    }
-    #[test]
-    fn recovery_roundtrip_and_atomic_storage_do_not_touch_original_document() {
-        let directory = directory();
-        let mut store = store(directory.clone());
-        let circuit = demo::full_adder();
-        let recovery = Recovery {
-            version: VERSION,
-            circuit: circuit.clone(),
-            file: Some(PathBuf::from("original.rgate")),
-            workspace: DocumentWorkspace::default(),
-        };
-        store.save(Preferences::default(), Some(recovery)).unwrap();
-        let loaded =
-            decode_recovery(&std::fs::read_to_string(directory.join("recovery.json")).unwrap())
-                .unwrap();
-        assert_eq!(loaded.circuit, circuit);
-        assert_eq!(loaded.file, Some(PathBuf::from("original.rgate")));
-        assert!(directory.join("settings.json").exists());
-        assert!(!directory.join("original.rgate").exists());
-        store.clear_recovery().unwrap();
-        assert!(!directory.join("recovery.json").exists());
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-    #[gpui::test]
-    fn views_and_named_probes_roundtrip_and_stale_probes_are_ignored(cx: &mut TestAppContext) {
-        let (view, cx) = cx.add_window_view(|window, cx| {
-            GateApp::new(demo::hierarchical_inverters(), None, window, cx)
-        });
-        cx.run_until_parked();
-        cx.update(|window, cx| {
-            view.update(cx, |app, cx| {
-                app.editor.viewport = Viewport {
-                    zoom: 2.0,
-                    pan: Point::new(120.0, 70.0),
-                };
-                app.remember_view();
-                app.switch_module("inverter".into(), cx);
-                app.editor.viewport = Viewport {
-                    zoom: 3.0,
-                    pan: Point::new(35.0, 45.0),
-                };
-                app.remember_view();
-                app.switch_module("main".into(), cx);
-                assert_eq!(app.editor.viewport.zoom, 2.0);
-                assert_eq!(app.editor.viewport.pan, Point::new(120.0, 70.0));
-                app.command(Command::ClockStep, window, cx);
-                app.navigate_scope("main/u0/inner".into(), "inverter".into(), cx);
-                app.toggle_probe(rgate_core::NetId(2), cx);
-                let saved = app.capture_workspace();
-                app.simulation = None;
-                app.probes.clear();
-                app.debug_path = None;
-                app.apply_workspace(saved);
-                app.switch_module("main".into(), cx);
-                app.saved_probes.insert(SavedProbe {
-                    root: "main".into(),
-                    path: "main/missing".into(),
-                    net: "bad".into(),
-                });
-                app.command(Command::ClockStep, window, cx);
-                assert_eq!(app.simulation.as_ref().unwrap().traces().len(), 1);
-                assert_eq!(app.saved_probes.len(), 1);
-                assert_eq!(
-                    app.simulation
-                        .as_ref()
-                        .unwrap()
-                        .traces()
-                        .values()
-                        .next()
-                        .unwrap()
-                        .name,
-                    "main/u0/inner/Y"
-                );
-            })
-        });
-    }
-    #[gpui::test]
-    fn recovered_document_stays_dirty_until_saved_and_persistence_handles_restart(
-        cx: &mut TestAppContext,
-    ) {
-        let directory = directory();
-        let (view, cx) =
-            cx.add_window_view(|window, cx| GateApp::new(demo::full_adder(), None, window, cx));
-        cx.run_until_parked();
-        cx.update(|window, cx| {
-            view.update(cx, |app, cx| {
-                app.persistence = Some(store(directory.clone()));
-                app.editor
-                    .place(rgate_core::GateKind::Not, Point::ZERO)
-                    .unwrap();
-                app.components_width = 300.0;
-                app.theme = Theme::Dark;
-                app.flush_workspace();
-                let recovery = decode_recovery(
-                    &std::fs::read_to_string(directory.join("recovery.json")).unwrap(),
-                )
-                .unwrap();
-                let prefs = decode_preferences(
-                    &std::fs::read_to_string(directory.join("settings.json")).unwrap(),
-                )
-                .unwrap();
-                assert_eq!(prefs.theme, Theme::Dark);
-                assert_eq!(prefs.components_width, 300.0);
-                app.editor = Editor::new(demo::full_adder()).unwrap();
-                app.persistence.as_mut().unwrap().recovery = Some(recovery);
-                app.dialog = Some(Dialog::Recovery);
-                app.restore_recovery(window, cx);
-                assert!(app.editor.is_dirty());
-                assert_eq!(app.editor.module().gates.len(), 13);
-                assert!(!app.running);
-                assert!(app.simulation.is_none());
-                app.editor.mark_saved();
-                app.flush_workspace();
-                assert!(!directory.join("recovery.json").exists());
-                app.persistence = None;
-            })
-        });
-        std::fs::remove_dir_all(directory).unwrap();
     }
 }

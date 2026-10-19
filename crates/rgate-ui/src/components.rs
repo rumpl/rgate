@@ -1,9 +1,14 @@
 use crate::{
     app::{GateApp, WorkspaceTab},
     commands::{self, Command},
-    theme::Theme,
+    theme::{Palette, Theme},
 };
-use gpui::{AnyElement, Context, FontWeight, SharedString, Window, div, prelude::*, px, rgb};
+use gpui::{AnyElement, Context, FontWeight, SharedString, Window, div, prelude::*, px};
+use gpui_component::{
+    ActiveTheme, Sizable as _, h_flex, input::Input, list::ListItem,
+    scroll::ScrollableElement as _, v_flex,
+};
+use gpui_kit_assets::IconName;
 use rgate_core::GateKind;
 use rgate_editor::Tool;
 
@@ -92,9 +97,10 @@ pub struct ComponentDrag {
     pub kind: GateKind,
     label: String,
     theme: Theme,
+    palette: Palette,
 }
 
-fn preview(kind: GateKind, theme: Theme) -> AnyElement {
+fn preview(kind: GateKind, theme: Theme, palette: Palette) -> AnyElement {
     if kind == GateKind::Comment || kind == GateKind::Frame {
         div()
             .w(px(20.))
@@ -106,75 +112,40 @@ fn preview(kind: GateKind, theme: Theme) -> AnyElement {
             })
             .into_any_element()
     } else if theme == Theme::Classic && crate::classic_gates::supports(&kind) {
-        crate::classic_gates::preview(kind, theme.palette())
+        crate::classic_gates::preview(kind, palette)
     } else {
-        crate::modern_gates::preview(kind, theme.palette())
+        crate::modern_gates::preview(kind, palette)
     }
 }
 
 impl Render for ComponentDrag {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let palette = self.theme.palette();
-        div()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .px(px(10.))
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        h_flex()
+            .gap_2()
+            .px_2p5()
             .h(px(32.))
-            .bg(rgb(palette.panel))
-            .text_color(rgb(palette.text))
-            .text_size(px(12.))
+            .bg(theme.popover)
+            .text_color(theme.popover_foreground)
+            .text_sm()
             .border_1()
-            .border_color(rgb(palette.gate))
-            .rounded(px(palette.radius))
+            .border_color(theme.border)
+            .rounded(theme.radius)
             .shadow_md()
-            .child(preview(self.kind.clone(), self.theme))
+            .child(preview(self.kind.clone(), self.theme, self.palette))
             .child(self.label.clone())
     }
 }
 
 impl GateApp {
     pub(super) fn component_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let palette = self.theme.palette();
         let enabled =
             self.dialog.is_none() && !self.prompting && self.tab != WorkspaceTab::Interface;
-        let query = self.component_search.read(cx).value.trim().to_owned();
+        let query = self.component_search.read(cx).value().trim().to_owned();
         let catalog = catalog()
             .into_iter()
             .filter(|component| matches_search(component, &query))
             .collect::<Vec<_>>();
-        let mut result_count = catalog.len();
-        let mut list = div()
-            .id("component-list")
-            .debug_selector(|| "component-list".into())
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .p(px(5.));
-        for heading in GROUPS {
-            if !catalog
-                .iter()
-                .any(|component| group(&component.kind) == *heading)
-            {
-                continue;
-            }
-            list = list.child(
-                div()
-                    .pt(px(10.))
-                    .pb(px(5.))
-                    .px(px(5.))
-                    .text_size(px(11.))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(palette.muted))
-                    .child(*heading),
-            );
-            for component in catalog
-                .iter()
-                .filter(|component| group(&component.kind) == *heading)
-            {
-                list = list.child(self.component_row(component, enabled, cx));
-            }
-        }
         let modules = self
             .editor
             .circuit()
@@ -188,95 +159,103 @@ impl GateApp {
             })
             .filter(|component| matches_search(component, &query))
             .collect::<Vec<_>>();
+        let theme = cx.theme();
+        let (muted, border) = (theme.muted_foreground, theme.sidebar_border);
+        let heading = move |label: &'static str| {
+            div()
+                .pt_2p5()
+                .pb_1()
+                .px_1()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(muted)
+                .child(label)
+        };
+        let mut list = v_flex().id("component-list").flex_1().min_h_0().p_1();
+        for group_name in GROUPS {
+            if !catalog
+                .iter()
+                .any(|component| group(&component.kind) == *group_name)
+            {
+                continue;
+            }
+            list = list.child(heading(group_name));
+            for component in catalog
+                .iter()
+                .filter(|component| group(&component.kind) == *group_name)
+            {
+                list = list.child(self.component_row(component, enabled, cx));
+            }
+        }
         if !modules.is_empty() {
-            list = list.child(
-                div()
-                    .pt(px(10.0))
-                    .pb(px(5.0))
-                    .px(px(5.0))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(palette.muted))
-                    .child("Module instances"),
-            );
-            result_count += modules.len();
+            list = list.child(heading("Module instances"));
             for component in &modules {
                 list = list.child(self.component_row(component, enabled, cx));
             }
         }
-        if result_count == 0 {
+        if catalog.is_empty() && modules.is_empty() {
             list = list.child(
                 div()
-                    .id("component-search-empty")
-                    .debug_selector(|| "component-search-empty".into())
-                    .p(px(10.0))
-                    .text_color(rgb(palette.muted))
+                    .p_2()
+                    .text_color(muted)
                     .child("No matching components."),
             );
         }
-        div()
+        v_flex()
             .id("component-sidebar")
-            .debug_selector(|| "component-sidebar".into())
-            .w(px(self.components_width))
-            .h_full()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .bg(rgb(palette.panel))
-            .border_1()
-            .border_color(rgb(palette.shadow))
+            .size_full()
             .child(
-                div()
-                    .h(px(31.))
+                h_flex()
+                    .h(px(34.))
                     .flex_none()
-                    .flex()
-                    .items_center()
-                    .px(px(10.))
-                    .gap(px(8.))
-                    .bg(rgb(palette.chrome))
+                    .px_2()
                     .border_b_1()
-                    .border_color(rgb(palette.shadow))
-                    .font_weight(FontWeight::BOLD)
+                    .border_color(border)
+                    .font_weight(FontWeight::SEMIBOLD)
                     .child("Components"),
             )
             .child(
-                div().flex_none().p(px(6.0)).h(px(40.0)).w_full().child(
-                    div()
-                        .id("component-search")
-                        .debug_selector(|| "component-search".into())
-                        .w_full()
-                        .min_w_0()
-                        .h(px(28.0))
-                        .child(self.component_search.clone()),
+                div().flex_none().p_1p5().child(
+                    Input::new(&self.component_search)
+                        .small()
+                        .cleanable(true)
+                        .prefix(gpui_component::Icon::new(IconName::Search).small()),
                 ),
             )
             .child(
                 div()
-                    .px(px(10.))
-                    .py(px(7.))
-                    .text_size(px(10.))
-                    .text_color(rgb(palette.muted))
+                    .px_2()
+                    .pb_1()
+                    .text_xs()
+                    .text_color(muted)
                     .child(if enabled {
                         "Drag onto canvas · click to place"
                     } else {
                         "Open Edit or Simulate to place"
                     }),
             )
-            .child(list)
+            .child(list.overflow_y_scrollbar())
             .child(
-                div()
+                h_flex()
                     .flex_none()
-                    .flex()
-                    .gap(px(5.))
-                    .p(px(6.))
-                    .bg(rgb(palette.chrome))
-                    .child(self.button(
-                        "grid",
-                        "Grid",
-                        Command::ToggleGrid,
-                        self.editor.show_grid,
-                        cx,
-                    ))
-                    .child(self.button("snap", "Snap", Command::ToggleSnap, self.editor.snap, cx)),
+                    .gap_1p5()
+                    .p_1p5()
+                    .border_t_1()
+                    .border_color(border)
+                    .child(
+                        self.button(
+                            "grid",
+                            "Grid",
+                            Command::ToggleGrid,
+                            self.editor.show_grid,
+                            cx,
+                        )
+                        .icon(IconName::Grid3x3),
+                    )
+                    .child(
+                        self.button("snap", "Snap", Command::ToggleSnap, self.editor.snap, cx)
+                            .icon(IconName::Magnet),
+                    ),
             )
             .into_any_element()
     }
@@ -287,48 +266,37 @@ impl GateApp {
         enabled: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let palette = self.theme.palette();
         let kind = component.kind.clone();
+        let palette = self.palette();
         let drag = ComponentDrag {
             kind: kind.clone(),
             label: component.label.clone(),
             theme: self.theme,
+            palette,
         };
-        let id = format!("component-{}", component.label);
-        let mut row = div()
-            .id(SharedString::from(id.clone()))
-            .debug_selector(move || id)
-            .h(px(29.))
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .px(px(5.))
-            .rounded(px(palette.radius))
-            .bg(rgb(if self.editor.tool == Tool::Place(kind.clone()) {
-                palette.accent
-            } else {
-                palette.panel
-            }))
-            .text_color(rgb(if enabled { palette.text } else { palette.muted }))
-            .child(preview(kind.clone(), self.theme))
+        let muted = cx.theme().muted_foreground;
+        let mut row = ListItem::new(SharedString::from(format!("component-{}", component.label)))
+            .selected(self.editor.tool == Tool::Place(kind.clone()))
+            .disabled(!enabled)
+            .py_0p5()
             .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .text_size(px(11.))
-                    .child(component.label.clone()),
-            )
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(palette.muted))
-                    .child(component.shortcut),
+                h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_2()
+                    .child(preview(kind.clone(), self.theme, palette))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_xs()
+                            .child(component.label.clone()),
+                    )
+                    .child(div().text_xs().text_color(muted).child(component.shortcut)),
             );
         if enabled {
             row = row
-                .cursor_pointer()
-                .hover(|style| style.bg(rgb(palette.hover)))
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.focus.focus(window, cx);
                     this.command(Command::Tool(Tool::Place(kind.clone())), window, cx);
