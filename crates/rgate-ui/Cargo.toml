@@ -36,5 +36,5 @@ js-sys = "0.3"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 gpui_platform.workspace = true
-gpui-component = { version = "=0.7.1", features = ["tree-sitter"] }
+gpui-component = { version = "=0.7.3", features = ["tree-sitter"] }
 tree-sitter-verilog = "1.0.3"

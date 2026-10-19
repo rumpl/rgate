@@ -22,9 +22,9 @@ thiserror = "2"
 regex = "1"
 num-bigint = "0.5.1"
 num-traits = "0.2"
-gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["runtime_shaders", "font-kit", "wayland", "x11"], default-features = false }
-gpui_web = { package = "gpui-pre-web", version = "=0.3.8", default-features = false }
+gpui = { package = "gpui-pre", version = "=0.3.9", default-features = false }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["runtime_shaders", "font-kit", "wayland", "x11"], default-features = false }
+gpui_web = { package = "gpui-pre-web", version = "=0.3.9", default-features = false }
 unicode-segmentation = "1"
 
 [workspace.lints.rust]
