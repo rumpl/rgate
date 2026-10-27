@@ -16,9 +16,9 @@ Icarus.
 ## Run the evaluation
 
 Rust **1.92+** is required when enabling xezim (the rest of the workspace
-declares 1.88). The pinned version is xezim **0.11.2**, revision
-`6fe99100cf4cb027216561a0fa48c038d1ecd3a0`; upstream pins xezim-core to
-`e5e6ea82b742c3c6807b1e3d6af73ef076cd2f31`. No upstream source patches are
+declares 1.88). The pinned version is xezim **0.11.3**, revision
+`058f2bba58648452e5799d17572356ebcae7d163`; upstream pins xezim-core to
+`48820a89e113df68687a10831e7051fbeb97340e`. No upstream source patches are
 needed. Cargo fetches both engines; their native dependencies include libffi.
 macOS arm64 has been tested.
 

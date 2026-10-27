@@ -19,7 +19,7 @@ application mark and macOS icon are original RGate artwork.
 GPUI
 ----
 GPUI is provided by the Zed Industries project under Apache License 2.0.
-Published GPUI snapshot packages: gpui-pre, gpui-pre-platform and gpui-pre-web 0.3.8.
+Published GPUI snapshot packages: gpui-pre, gpui-pre-platform and gpui-pre-web 0.3.9.
 These releases are provided by the GPUI Kit ecosystem from Zed GPUI sources.
 Packages are fetched from crates.io; no vendored source or local patches.
 License text: licenses/GPUI-APACHE-2.0
@@ -49,7 +49,7 @@ The optional xezim dependency is pinned in crates/rgate-hdl/Cargo.toml;
 its upstream license is retained by Cargo's source checkout (Apache-2.0 LICENSE).
 
 User interface components and code editor: GPUI Kit (gpui-component, gpui-base
-and gpui-kit-assets 0.7.3) from https://github.com/longbridge/gpui-kit,
+and gpui-kit-assets 0.8.0) from https://github.com/longbridge/gpui-kit,
 Apache-2.0. Published crates.io packages; no vendored component code or Zed
 internal editor dependencies.
 Verilog grammar: tree-sitter-verilog 1.0.3 (MIT, Cargo dependency).

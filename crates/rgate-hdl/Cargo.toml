@@ -20,7 +20,7 @@ rgate-sim.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile = { version = "3", optional = true }
-xezim = { git = "https://github.com/aionhw/xezim", rev = "6fe99100cf4cb027216561a0fa48c038d1ecd3a0", optional = true }
+xezim = { git = "https://github.com/aionhw/xezim", rev = "058f2bba58648452e5799d17572356ebcae7d163", optional = true }
 
 [[bin]]
 name = "rgate-hdl"
