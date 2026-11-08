@@ -1,4 +1,7 @@
 //! Retain schematic metadata for live navigation; dispatch runtime operations to one engine.
+#[cfg(all(test, feature = "icarus"))]
+#[path = "live_simulation_tests.rs"]
+mod tests;
 use rgate_core::{GateId, NetId, Signal};
 #[cfg(feature = "icarus")]
 use rgate_sim::SimulationBackend;
@@ -101,6 +104,14 @@ impl LiveSimulation {
         }
         self.schematic.gate_value(gate)
     }
+    pub fn is_input(&self, gate: GateId) -> bool {
+        #[cfg(feature = "icarus")]
+        if self.hdl.is_some() {
+            return self.inputs.contains_key(&gate);
+        }
+        self.schematic.is_input(gate)
+    }
+
     pub fn set_input(&mut self, gate: GateId, value: Signal) -> Result<(), SimError> {
         #[cfg(feature = "icarus")]
         if let Some(hdl) = &mut self.hdl {
@@ -226,16 +237,31 @@ impl LiveSimulation {
             }
         }
         let mut sources = vec![exported];
-        // A source definition can run independently: expose declared input ports
-        // through host-owned registers. Users supply clocks in a testbench source.
-        let top = if circuit.module(root).unwrap().verilog.is_some() {
+        // Drive only root ports from the host; child ports retain their parent wiring.
+        let top = if circuit
+            .module(root)
+            .unwrap()
+            .nets
+            .iter()
+            .any(|net| net.port.is_some())
+        {
             let module = circuit.module(root).unwrap();
+            for binding in &mut bindings {
+                binding.path = format!("dut.{}", binding.path);
+            }
             let mut wrapper = String::from("`timescale 1ns/1ps\nmodule rgate_hdl_host;\n");
             let mut ports = Vec::new();
             for net in module.nets.iter().filter(|n| n.port.is_some()) {
                 if net.port == Some(rgate_core::Direction::Input) {
                     wrapper.push_str(&format!("reg [{}:0] {}=0;\n", net.width - 1, net.name));
-                    let gate = GateId(1_000_000 + net.id.0);
+                    let gate = module
+                        .gates
+                        .iter()
+                        .find(|gate| {
+                            gate.kind == rgate_core::GateKind::InputPort
+                                && gate.pin("P").and_then(|pin| pin.net) == Some(net.id)
+                        })
+                        .map_or(GateId(1_000_000 + net.id.0), |gate| gate.id);
                     inputs.insert(gate, net.id);
                     bindings.push(rgate_hdl::HdlSignal {
                         net: NetId(2_000_000 + net.id.0),
@@ -249,11 +275,6 @@ impl LiveSimulation {
                 ports.push(format!(".{}({})", net.name, net.name));
             }
             wrapper.push_str(&format!("{root} dut({});\nendmodule\n", ports.join(",")));
-            for binding in &mut bindings {
-                if binding.input.is_none() {
-                    binding.path = format!("dut.{}", binding.path);
-                }
-            }
             sources.push(wrapper);
             "rgate_hdl_host"
         } else {
@@ -270,6 +291,6 @@ impl LiveSimulation {
     pub fn source_input(&self, net: NetId) -> Option<GateId> {
         self.inputs
             .iter()
-            .find_map(|(gate, id)| (*id == net && gate.0 >= 1_000_000).then_some(*gate))
+            .find_map(|(gate, id)| (*id == net).then_some(*gate))
     }
 }

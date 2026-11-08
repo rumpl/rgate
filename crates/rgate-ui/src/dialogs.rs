@@ -97,7 +97,7 @@ impl GateApp {
                 Some(GateKind::Comment) => ("Comment properties", 500.0),
                 _ => ("Gate properties", 500.0),
             },
-            Dialog::Input { .. } => ("Set DIP input", 400.0),
+            Dialog::Input { .. } => ("Set input value", 400.0),
             Dialog::Memory { .. } => ("Memory inspector", 580.0),
             Dialog::Net(_) => ("Net properties", 440.0),
             Dialog::Terminal { .. } => ("Terminal I/O", 580.0),

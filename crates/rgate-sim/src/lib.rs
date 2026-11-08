@@ -136,7 +136,15 @@ impl Simulator {
         let flattened = circuit
             .flatten_with_scopes(name)
             .map_err(SimError::Invalid)?;
-        let mut simulator = Self::new(&flattened.module)?;
+        let input_ports = circuit
+            .module(name)
+            .unwrap()
+            .gates
+            .iter()
+            .filter(|gate| gate.kind == GateKind::InputPort)
+            .map(|gate| gate.id)
+            .collect::<Vec<_>>();
+        let mut simulator = Self::with_input_ports(&flattened.module, &input_ports)?;
         simulator.scopes = flattened.scopes;
         simulator.root_path = name.into();
         simulator.source = circuit
@@ -147,6 +155,29 @@ impl Simulator {
     }
 
     pub fn new(module: &Module) -> Result<Self, SimError> {
+        let input_ports = module
+            .gates
+            .iter()
+            .filter(|gate| gate.kind == GateKind::InputPort)
+            .map(|gate| gate.id)
+            .collect::<Vec<_>>();
+        Self::with_input_ports(module, &input_ports)
+    }
+
+    fn with_input_ports(module: &Module, input_ports: &[GateId]) -> Result<Self, SimError> {
+        let source = module.clone();
+        let mut runtime = module.clone();
+        // Only the simulation root owns its inputs; nested ports remain passive.
+        for gate in &mut runtime.gates {
+            if input_ports.contains(&gate.id) {
+                gate.kind = GateKind::Dip;
+                if let Some(pin) = gate.pin_mut("P") {
+                    pin.name = "Z".into();
+                    pin.direction = Direction::Output;
+                }
+            }
+        }
+        let module = &runtime;
         module
             .validate()
             .map_err(|error| SimError::Invalid(error.to_string()))?;
@@ -158,7 +189,7 @@ impl Simulator {
             .collect();
         let mut simulator = Self {
             flattened: module.clone(),
-            source: module.clone(),
+            source,
             scopes: HashMap::from([(
                 module.name.clone(),
                 rgate_core::InstanceScope {
@@ -300,6 +331,16 @@ impl Simulator {
 
     pub fn unprobe(&mut self, net: NetId) {
         self.traces.remove(&net);
+    }
+
+    pub fn is_input(&self, id: GateId) -> bool {
+        self.flattened.gates.iter().any(|gate| {
+            gate.id == id
+                && matches!(
+                    gate.kind,
+                    GateKind::Switch | GateKind::Dip | GateKind::Peripheral
+                )
+        })
     }
 
     pub fn set_input(&mut self, id: GateId, value: Signal) -> Result<(), SimError> {
@@ -888,6 +929,57 @@ mod tests {
         simulator.advance(20).unwrap();
         assert_eq!(simulator.value(NetId(3)).unwrap().bit(0), Logic::HighZ);
     }
+    #[test]
+    fn standalone_input_ports_drive_without_changing_the_document() {
+        let mut circuit = rgate_core::demo::hierarchical_inverters();
+        let module = circuit.module_mut("inverter").unwrap();
+        let mut port = Gate::new(GateId(2), GateKind::InputPort, rgate_core::Point::ZERO);
+        port.pin_mut("P").unwrap().net = Some(NetId(1));
+        module.gates.push(port);
+        let original = circuit.clone();
+        let mut sim = Simulator::from_circuit(&circuit, "inverter").unwrap();
+        assert!(sim.is_input(GateId(2)));
+        sim.set_input(GateId(2), Signal::from_u64(0, 1)).unwrap();
+        sim.advance(30).unwrap();
+        assert_eq!(sim.value(NetId(2)).unwrap().to_u64(), Some(1));
+        sim.toggle_input(GateId(2)).unwrap();
+        sim.advance(30).unwrap();
+        assert_eq!(sim.value(NetId(2)).unwrap().to_u64(), Some(0));
+        assert_eq!(sim.module(), original.module("inverter").unwrap());
+        assert_eq!(circuit, original);
+
+        let mut parent = Simulator::from_circuit(&circuit, "main").unwrap();
+        let child_port = parent.scopes()["main/u0/inner"].gates[&GateId(2)];
+        assert!(!parent.is_input(child_port));
+        assert!(
+            parent
+                .set_input(child_port, Signal::from_u64(1, 1))
+                .is_err()
+        );
+        parent.advance(30).unwrap();
+        assert_eq!(parent.value(NetId(2)).unwrap().to_u64(), Some(1));
+        parent.toggle_input(GateId(1)).unwrap();
+        parent.advance(30).unwrap();
+        assert_eq!(parent.value(NetId(2)).unwrap().to_u64(), Some(0));
+    }
+
+    #[test]
+    fn bus_input_ports_accept_full_width_values() {
+        let mut module = Module::new("bus");
+        module.nets.push(rgate_core::Net::new(NetId(1), "data", 16));
+        module.nets[0].port = Some(Direction::Input);
+        let mut port = Gate::new(GateId(1), GateKind::InputPort, rgate_core::Point::ZERO);
+        port.width = 16;
+        port.pin_mut("P").unwrap().net = Some(NetId(1));
+        module.gates.push(port);
+        let mut sim = Simulator::new(&module).unwrap();
+        sim.set_input(GateId(1), Signal::from_u64(0xabcd, 16))
+            .unwrap();
+        sim.advance(30).unwrap();
+        assert_eq!(sim.value(NetId(1)).unwrap().to_u64(), Some(0xabcd));
+        assert_eq!(sim.module(), &module);
+    }
+
     #[test]
     fn nested_instances_simulate_independently_and_follow_parent_switches() {
         let circuit = rgate_core::demo::hierarchical_inverters();

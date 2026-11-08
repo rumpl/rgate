@@ -1770,6 +1770,7 @@ impl GateApp {
                     .as_mut()
                     .context("Simulation inactive")?
                     .set_input(runtime_dialog_gate.context("No runtime input")?, word)?;
+                self.simulation.as_mut().unwrap().advance(30)?;
                 Ok(())
             })(),
             Some(Dialog::Memory {
@@ -2414,11 +2415,12 @@ impl GateApp {
                         cx.notify();
                         return;
                     }
-                    if self
-                        .editor
-                        .module()
-                        .gate(id)
-                        .is_some_and(|gate| gate.kind == GateKind::Dip)
+                    if self.editor.module().gate(id).is_some_and(|gate| {
+                        gate.kind == GateKind::Dip
+                            || (gate.kind == GateKind::InputPort && gate.width > 1)
+                    }) && self
+                        .simulation_gate(id)
+                        .is_some_and(|runtime| self.simulation.as_ref().unwrap().is_input(runtime))
                     {
                         let runtime = self.simulation_gate(id).unwrap();
                         let value = self
@@ -2441,13 +2443,21 @@ impl GateApp {
                     if self.editor.module().gate(id).is_some_and(|gate| {
                         matches!(
                             gate.kind,
-                            GateKind::Switch | GateKind::Dip | GateKind::Peripheral
+                            GateKind::Switch
+                                | GateKind::Dip
+                                | GateKind::Peripheral
+                                | GateKind::InputPort
                         )
                     }) {
                         let Some(runtime_id) = self.simulation_gate(id) else {
                             self.log("Input is not in this live instance.".into());
                             return;
                         };
+                        if !self.simulation.as_ref().unwrap().is_input(runtime_id) {
+                            self.editor.select(id, event.modifiers.shift);
+                            cx.notify();
+                            return;
+                        }
                         if let Err(error) =
                             self.simulation.as_mut().unwrap().toggle_input(runtime_id)
                         {

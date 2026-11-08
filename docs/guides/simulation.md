@@ -48,6 +48,10 @@ through reset logic or the source’s initialization statements.
 
 ## Inputs during simulation
 
+- Run a module definition on its own to test it without a parent circuit. Click
+  a one-bit input port to toggle it; click a bus input port to enter a hexadecimal
+  value. Read outputs in Nets or probe their wires. Input ports inside a running
+  parent instance remain driven by the parent, not by these controls.
 - Click a Switch to toggle its value.
 - Double-click a DIP to enter a hexadecimal bus value.
 - Click GPIO to increment its output.
