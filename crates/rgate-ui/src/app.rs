@@ -6,8 +6,7 @@ use crate::{
 use anyhow::{Context as _, Result};
 use gpui::{
     Bounds, ClipboardItem, Context, Entity, FocusHandle, KeyDownEvent, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, ScrollWheelEvent, Subscription, Task, Window,
-    px,
+    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, ScrollEvent, Subscription, Task, Window, px,
 };
 #[cfg(not(target_family = "wasm"))]
 use gpui::{PathPromptOptions, PromptLevel};
@@ -2661,7 +2660,7 @@ impl GateApp {
         cx.notify();
     }
 
-    pub fn scroll(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn scroll(&mut self, event: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         if self.dialog.is_some() || self.context_menu.is_some() {
             cx.stop_propagation();
             return;

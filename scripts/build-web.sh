@@ -5,7 +5,7 @@ profile="${1:-web}"
 [[ "$profile" == web || "$profile" == dev ]] || { print -u2 "Usage: $0 [web|dev]"; exit 1; }
 # Cargo installs tools here even when the shell PATH only includes Homebrew.
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
-command -v wasm-bindgen >/dev/null || { print -u2 "wasm-bindgen was not found on PATH or in ${CARGO_HOME:-$HOME/.cargo}/bin. Install it with: cargo install wasm-bindgen-cli --version 0.2.129 --locked"; exit 1; }
+command -v wasm-bindgen >/dev/null || { print -u2 "wasm-bindgen was not found on PATH or in ${CARGO_HOME:-$HOME/.cargo}/bin. Install it with: cargo install wasm-bindgen-cli --version 0.2.130 --locked"; exit 1; }
 
 compiler="${RUSTC:-$(command -v rustc)}"
 if [[ ! -d "$("$compiler" --print target-libdir --target wasm32-unknown-unknown)" ]]; then

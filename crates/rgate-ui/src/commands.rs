@@ -391,24 +391,32 @@ pub fn install(cx: &mut App) {
             ],
         },
     ]);
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
+    macro_rules! shortcut {
+        ($key:literal, $action:expr) => {
+            KeyBinding::new(
+                if cfg!(target_os = "macos") {
+                    concat!("cmd-", $key)
+                } else {
+                    concat!("ctrl-", $key)
+                },
+                $action,
+                Some("RGate"),
+            )
+        };
+    }
     cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-f"), Find, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-n"), New, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-o"), Open, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-s"), Save, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-shift-s"), SaveAs, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-z"), Undo, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-shift-z"), Redo, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-x"), Cut, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-c"), Copy, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-v"), Paste, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-a"), SelectAll, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-0"), Fit, Some("RGate")),
-        KeyBinding::new(&format!("{modifier}-q"), Quit, Some("RGate")),
+        shortcut!("f", Find),
+        shortcut!("n", New),
+        shortcut!("o", Open),
+        shortcut!("s", Save),
+        shortcut!("shift-s", SaveAs),
+        shortcut!("z", Undo),
+        shortcut!("shift-z", Redo),
+        shortcut!("x", Cut),
+        shortcut!("c", Copy),
+        shortcut!("v", Paste),
+        shortcut!("a", SelectAll),
+        shortcut!("0", Fit),
+        shortcut!("q", Quit),
     ]);
 }

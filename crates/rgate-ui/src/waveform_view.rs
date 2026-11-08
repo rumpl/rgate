@@ -352,7 +352,7 @@ impl GateApp {
                             cx.stop_propagation();
                         }),
                     )
-                    .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollWheelEvent, _, cx| {
+                    .on_scroll(cx.listener(|this, event: &gpui::ScrollEvent, _, cx| {
                         let delta = event.delta.pixel_delta(px(24.0));
                         if event.modifiers.platform || event.modifiers.control {
                             let fraction = (f32::from(event.position.x - this.wave_bounds.left())
