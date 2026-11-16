@@ -1,7 +1,5 @@
 //! Explicit source sets and bindings: no schematic import or automatic HDL synthesis.
 use crate::HdlSignal;
-#[cfg(feature = "xezim")]
-use crate::XezimBackend;
 use rgate_core::{GateId, Logic, NetId, Signal};
 use rgate_sim::{SimError, SimulationBackend};
 use serde::Deserialize;
@@ -39,43 +37,7 @@ impl HdlProject {
         serde_json::from_str(&content)
             .map_err(|e| SimError::Invalid(format!("{}: {e}", path.display())))
     }
-    #[cfg(feature = "xezim")]
-    pub fn instantiate(&self, directory: &Path) -> Result<XezimBackend, SimError> {
-        let mut paths = std::collections::BTreeSet::new();
-        for signal in &self.signals {
-            if !paths.insert(&signal.path) {
-                return Err(SimError::Invalid(format!(
-                    "duplicate signal path {}",
-                    signal.path
-                )));
-            }
-        }
-        let sources = self
-            .sources
-            .iter()
-            .map(|path| {
-                let path = directory.join(path);
-                std::fs::read_to_string(&path)
-                    .map_err(|e| SimError::Invalid(format!("{}: {e}", path.display())))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        XezimBackend::new(
-            sources,
-            &self.top,
-            self.signals
-                .iter()
-                .enumerate()
-                .map(|(index, signal)| HdlSignal {
-                    net: NetId(index as u64 + 1),
-                    path: signal.path.clone(),
-                    width: signal.width,
-                    input: signal.input.then_some(GateId(index as u64 + 1)),
-                })
-                .collect(),
-        )
-    }
-    #[cfg(feature = "icarus")]
-    pub fn instantiate_icarus(&self, directory: &Path) -> Result<crate::IcarusBackend, SimError> {
+    pub fn instantiate(&self, directory: &Path) -> Result<crate::IcarusBackend, SimError> {
         let sources = self
             .sources
             .iter()

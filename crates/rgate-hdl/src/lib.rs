@@ -1,4 +1,4 @@
-//! Experimental HDL backends, independent of the schematic simulator and UI.
+//! Icarus Verilog integration, independent of the schematic simulator and UI.
 use rgate_core::{GateId, NetId};
 
 #[derive(Clone, Debug)]
@@ -11,17 +11,13 @@ pub struct HdlSignal {
     pub input: Option<GateId>,
 }
 
-#[cfg(all(any(feature = "xezim", feature = "icarus"), target_arch = "wasm32"))]
-compile_error!("HDL backends are native-only; disable their features for WASM.");
-#[cfg(feature = "xezim")]
-mod xezim_backend;
-#[cfg(feature = "xezim")]
-pub use xezim_backend::XezimBackend;
+#[cfg(all(feature = "icarus", target_arch = "wasm32"))]
+compile_error!("Icarus is native-only; disable the icarus feature for WASM.");
 #[cfg(feature = "icarus")]
 mod icarus_backend;
 #[cfg(feature = "icarus")]
 pub use icarus_backend::{DiscoveredSignal, IcarusBackend, check_sources};
-#[cfg(any(feature = "xezim", feature = "icarus"))]
+#[cfg(feature = "icarus")]
 mod project;
-#[cfg(any(feature = "xezim", feature = "icarus"))]
+#[cfg(feature = "icarus")]
 pub use project::{Action, HdlProject, ProjectSignal};

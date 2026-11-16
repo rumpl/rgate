@@ -11,11 +11,35 @@ fn binding(id: u64, path: &str, width: u16, input: bool) -> HdlSignal {
     }
 }
 #[test]
+fn cli_runs_project_and_exports_vcd() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/verilog");
+    let output_directory = tempfile::tempdir().unwrap();
+    let vcd = output_directory.path().join("four-state.vcd");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rgate-hdl"))
+        .arg(directory.join("four-state.json"))
+        .arg("--vcd")
+        .arg(&vcd)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("checks passed"));
+    assert!(
+        std::fs::read_to_string(vcd)
+            .unwrap()
+            .contains("$timescale 1ns $end")
+    );
+}
+
+#[test]
 fn downloaded_designs_run_without_replay() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/verilog");
     for name in ["projectf", "uart", "picorv32", "four-state", "pwm"] {
         let project = HdlProject::load(&directory.join(format!("{name}.json"))).unwrap();
-        let mut backend = project.instantiate_icarus(&directory).unwrap();
+        let mut backend = project.instantiate(&directory).unwrap();
         project.execute(&mut backend).unwrap();
         assert!(
             backend
@@ -29,7 +53,7 @@ fn downloaded_designs_run_without_replay() {
 fn pwm_live_duty_and_next_timestep_match_expected_high_counts() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/verilog");
     let project = HdlProject::load(&directory.join("pwm.json")).unwrap();
-    let mut backend = project.instantiate_icarus(&directory).unwrap();
+    let mut backend = project.instantiate(&directory).unwrap();
     backend.probe(NetId(3)).unwrap();
     backend.advance(30).unwrap();
     assert!(

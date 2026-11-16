@@ -1,9 +1,9 @@
 # Persistent Icarus Verilog backend prototype
 
-[HDL evaluation](hdl-backend.md) · [HDL fixtures](../examples/verilog/README.md)
+[HDL fixtures](../examples/verilog/README.md)
 
-Unlike the xezim replay prototype, this adapter compiles once and controls **one
-persistent `vvp` child process** through a small C VPI plugin. The Rust adapter
+RGate's HDL engine compiles once and controls **one persistent `vvp` child
+process** through a small C VPI plugin. The Rust adapter
 implements `SimulationBackend`, with no unsafe Rust or in-process FFI. An opt-in
 desktop PWM binding now connects it to editor inputs, LEDs, hierarchy, and
 waveforms. The [Verilog module workflow](../docs/guides/verilog-modules.md) also
@@ -15,7 +15,7 @@ PWM binding remains an explicit example.
 ```sh
 brew install icarus-verilog
 cargo run -p rgate-hdl --features icarus -- examples/verilog/pwm.json --vcd /tmp/pwm.vcd
-cargo test -p rgate-hdl --features icarus,xezim
+cargo test -p rgate-hdl --features icarus
 ```
 
 Icarus **13.0** was tested on macOS arm64. `iverilog`, `iverilog-vpi`, `vvp`,
@@ -65,14 +65,7 @@ work. Other circuits, memory/TTY/VGA peripherals, and browser builds remain on
 the Rust backend. Finder launches on macOS search Homebrew's common tool paths
 if the shell PATH is absent.
 
-## Why this backend
-
-Vitamin **0.2.1**, revision `35993da40e8649128ef2152b824b365535e86c6d`, was
-inspected first. Its public `sim_engine::simulate` and `simulate_capture` APIs
-create/run a runtime to completion or a limit. `Scheduler` and `SimState` are
-private. There is no public retained-runtime step/input/read API at that
-revision. This does not mean vitamin cannot gain one; it means another replay
-adapter would not solve our requirement.
+## Runtime behavior
 
 Icarus offers VPI callbacks and hierarchical handles. We pause at a settled
 read-only boundary and wait for a command from Rust. Resuming returns control to
@@ -92,8 +85,7 @@ the same scheduler rather than replaying HDL.
 
 The downloaded VGA/LFSR, UART loopback, PicoRV32 ROM, four-state fixture, and
 PWM all pass. PWM verifies **0, 1, 64, 128, 192, and 255 high samples per 256
-rising edges** after live duty changes. Keep these fixtures when testing other
-backends.
+rising edges** after live duty changes.
 
 ## Important boundaries
 
@@ -134,10 +126,6 @@ backends.
 
 ## Current assessment
 
-**Icarus is the stronger interactive prototype so far.** It provides the runtime
-lifecycle and debug hooks that xezim/vitamin's inspected public APIs lack.
-Before making it a production editor backend, add stable protocol framing,
-configurable execution budgets, compiler cancellation, direction/type-aware
-input binding, fuller hierarchy discovery, precise timestamps, and
-GUI/peripheral integration. Test more RTL and cross-check behavior before
-choosing permanently.
+Further hardening includes stable protocol framing, configurable execution
+budgets, compiler cancellation, direction/type-aware input binding, fuller
+hierarchy discovery, precise timestamps, and GUI/peripheral integration.

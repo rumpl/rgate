@@ -25,21 +25,16 @@ cargo run -p rgate-hdl --features icarus -- examples/verilog/uart.json --vcd /tm
 cargo run -p rgate-hdl --features icarus -- examples/verilog/picorv32.json --vcd /tmp/picorv32.vcd
 cargo run -p rgate-hdl --features icarus -- examples/verilog/four-state.json --vcd /tmp/four-state.vcd
 cargo run -p rgate-hdl --features icarus -- examples/verilog/pwm.json --vcd /tmp/pwm.vcd
-cargo test -p rgate-hdl --features icarus,xezim
+cargo test -p rgate-hdl --features icarus
 ```
 
 The runner prints observed values and fails a mismatched check with a nonzero
 exit. Only `probe` signals are exported to VCD. Current schematic UI has no VCD
-import; use an external waveform viewer. The default runner uses persistent
-Icarus VPI. Add `--features icarus,xezim` and place `--xezim` before the project
-path to select the older replay adapter (Rust 1.92+ required).
+import; use an external waveform viewer. The runner uses persistent Icarus VPI.
 
 **Trusted HDL only:** this is not a sandbox. HDL system tasks may access files
-or invoke commands. The optional xezim adapter repeats execution from time zero,
-including side effects. Avoid testbenches with `$finish`, `$stop`, `final`,
-random/external state, or dump/filesystem tasks. Read the
-[backend evaluation](../../contributor-docs/hdl-backend.md) for the substantial
-stepping and performance limitations.
+or invoke commands. See the [Icarus backend documentation](../../contributor-docs/icarus-backend.md)
+for runtime behavior and limitations.
 
 ## PWM shared fixture
 

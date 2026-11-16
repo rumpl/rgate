@@ -11,7 +11,6 @@ workspace = true
 
 [features]
 default = []
-xezim = ["dep:xezim"]
 icarus = ["dep:tempfile"]
 
 [dependencies]
@@ -20,7 +19,6 @@ rgate-sim.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile = { version = "3", optional = true }
-xezim = { git = "https://github.com/aionhw/xezim", rev = "2e4e7f99d6dbaf22ef4b8464e7b3762e39017719", optional = true }
 
 [[bin]]
 name = "rgate-hdl"
