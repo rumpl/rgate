@@ -60,14 +60,14 @@ impl Theme {
                 hover: 0xeeeeee,
                 selection: 0xccccff,
                 gate: 0x0000ff,
-                wire: 0x008b00,
-                bus: 0xff0000,
-                low: 0xdd00dd,
-                high: 0x008b00,
+                wire: 0x008500,
+                bus: 0xd12b2b,
+                low: 0xb000b0,
+                high: 0x008500,
                 unknown: 0xe02020,
                 float: 0x0000ff,
                 grid: 0xcccccc,
-                selected_wire: 0xf08000,
+                selected_wire: 0xa85200,
                 module: 0x8b008b,
             },
             (Self::Classic, Appearance::Dark) => Palette {
@@ -103,11 +103,11 @@ impl Theme {
                 wire: 0x0f766e,
                 bus: 0x9333ea,
                 low: 0x7c3aed,
-                high: 0x059669,
+                high: 0x007d56,
                 unknown: 0xdc2626,
-                float: 0x0284c7,
+                float: 0x0073ac,
                 grid: 0xe2e8f0,
-                selected_wire: 0xea580c,
+                selected_wire: 0xb84408,
                 module: 0x7c3aed,
             },
             (Self::Modern, Appearance::Dark) => Palette {
@@ -148,4 +148,63 @@ impl Palette {
         })
         .into()
     }
+}
+
+/// Application chrome is independent of the schematic drawing style.
+/// Small radii and restrained surfaces keep this an editor, not a set of cards.
+pub fn apply_chrome(appearance: Appearance, cx: &mut gpui::App) {
+    use gpui::px;
+    gpui_component::Theme::update(cx, |theme| {
+        let dark = appearance.is_dark();
+        let color = |light, dark_color| rgb(if dark { dark_color } else { light }).into();
+        theme.radius = px(4.0);
+        theme.radius_lg = px(6.0);
+        theme.font_size = px(16.0);
+        theme.focus_ring = true;
+        if cfg!(target_family = "wasm") {
+            theme.font_family = "IBM Plex Sans".into();
+            theme.mono_font_family = "Lilex".into();
+        }
+        let c = &mut theme.colors;
+        c.background = color(0xf4f6f8, 0x161c25);
+        c.foreground = color(0x202c3b, 0xe4eaf2);
+        c.muted_foreground = color(0x526174, 0xa8b7ca);
+        c.muted = color(0xe8edf3, 0x263140);
+        c.sidebar = color(0xf4f6f8, 0x161c25);
+        c.sidebar_foreground = c.foreground;
+        c.border = color(0xc7d0dc, 0x3c4a5e);
+        c.sidebar_border = c.border;
+        c.title_bar = c.background;
+        c.title_bar_border = c.border;
+        c.tab_bar = c.background;
+        c.tab = c.background;
+        c.tab_foreground = c.muted_foreground;
+        c.tab_active = color(0xffffff, 0x202b3b);
+        c.tab_active_foreground = c.foreground;
+        c.primary = color(0x245caa, 0x8ab9ff);
+        c.primary_foreground = color(0xffffff, 0x101b2b);
+        c.primary_hover = color(0x194b90, 0xa3c8ff);
+        c.primary_active = color(0x16417c, 0xb6d3ff);
+        c.button_primary = c.primary;
+        c.button_primary_foreground = c.primary_foreground;
+        c.button_primary_hover = c.primary_hover;
+        c.button_primary_active = c.primary_active;
+        c.popover = color(0xffffff, 0x1b232e);
+        c.popover_foreground = c.foreground;
+        c.ring = c.primary;
+        c.caret = c.primary;
+        c.accent = color(0xdde9f9, 0x283f60);
+        c.accent_foreground = color(0x174780, 0xc3dcff);
+        c.secondary = c.muted;
+        c.secondary_foreground = c.foreground;
+        c.secondary_hover = c.accent;
+        c.secondary_active = c.accent;
+        c.list_hover = color(0xe6ecf3, 0x233044);
+        c.list_active = c.accent;
+        c.list_active_border = c.primary;
+        c.list_head = c.sidebar;
+        c.input = color(0x7c8999, 0x7486a0);
+        c.selection = c.accent;
+        c.success = color(0x18734b, 0x69d5a3);
+    });
 }

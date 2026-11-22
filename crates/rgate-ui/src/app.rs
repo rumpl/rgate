@@ -32,6 +32,12 @@ pub struct ContextMenu {
     pub _dismiss: Subscription,
 }
 
+pub struct OpenMenu {
+    pub name: &'static str,
+    pub menu: Entity<PopupMenu>,
+    pub _dismiss: Subscription,
+}
+
 /// The GPUI Kit dialog currently mirroring `GateApp::dialog`.
 pub struct OpenDialog {
     pub title: &'static str,
@@ -202,6 +208,7 @@ pub struct GateApp {
     pub input_swap: Option<(GateId, Option<String>)>,
     pub mouse: Point,
     pub context_menu: Option<ContextMenu>,
+    pub open_menu: Option<OpenMenu>,
     pub dialog: Option<Dialog>,
     pub open_dialog: Option<OpenDialog>,
     pub drag: Option<Drag>,
@@ -268,7 +275,7 @@ impl GateApp {
             nets_ports: false, module_list: false, collapsed_modules: std::collections::HashSet::new(), probes: BTreeSet::new(),
             messages: vec!["RGate 0.1 — TkGate-style circuit editing, powered by Rust + GPUI.".into(),
                 "Click a tool to place gates. W connects pins; Space runs; double-click a wire probes it.".into()],
-            status: "Ready".into(), hover: None, input_swap: None, mouse: Point::ZERO, context_menu: None, dialog: None, open_dialog: None, drag: None,
+            status: "Ready".into(), hover: None, input_swap: None, mouse: Point::ZERO, context_menu: None, open_menu: None, dialog: None, open_dialog: None, drag: None,
             canvas_bounds: Bounds::default(), sidebar_width: 210.0, components_width:205.0, modules_height:196.0, bottom_height: 176.0,
             need_fit: true, auto_fit: None, closing: false, prompting: false, timer: None,
         };

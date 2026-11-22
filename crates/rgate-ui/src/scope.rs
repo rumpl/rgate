@@ -22,6 +22,39 @@ pub fn paint(
             .label_width
             .min((f32::from(bounds.size.width) * 0.6).max(100.0));
         let x_start = bounds.left() + px(labels);
+        // The time ruler and signal gutter are instrument furniture, not traces.
+        let ruler_bottom = bounds.top() + px(RULER_HEIGHT);
+        window.paint_quad(fill(
+            Bounds::new(bounds.origin, size(bounds.size.width, px(RULER_HEIGHT))),
+            rgb(palette.light),
+        ));
+        stroke(
+            [
+                point(bounds.left(), ruler_bottom),
+                point(bounds.right(), ruler_bottom),
+            ],
+            1.0,
+            rgb(palette.shadow).into(),
+            false,
+            window,
+        );
+        stroke(
+            [
+                point(x_start, bounds.top()),
+                point(
+                    x_start,
+                    if traces.is_empty() {
+                        ruler_bottom
+                    } else {
+                        bounds.bottom()
+                    },
+                ),
+            ],
+            1.0,
+            rgb(palette.shadow).into(),
+            false,
+            window,
+        );
         let width = (f32::from(bounds.size.width) - labels - 8.0).max(1.0);
         let start = state.visible_start(time);
         let end = start + state.span;
@@ -42,7 +75,7 @@ pub fn paint(
             text(
                 &format!("{at:.0}"),
                 point(x(at) + px(3.0), bounds.top() + px(2.0)),
-                10.0,
+                11.0,
                 rgb(palette.muted).into(),
                 window,
                 cx,
@@ -52,7 +85,7 @@ pub fn paint(
         text(
             "Signal / value at A",
             bounds.origin + point(px(8.0), px(2.0)),
-            10.0,
+            11.0,
             rgb(palette.muted).into(),
             window,
             cx,

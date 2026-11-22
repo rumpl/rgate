@@ -3,7 +3,14 @@
 [Documentation home](../README.md) ·
 [Component reference](../components/README.md)
 
-![Editor panels and component sidebar](../images/editor.png)
+![Editor panels and component sidebar](../design/ui-refresh/after/1240-light-edit.png)
+
+The editor uses compact, cool-neutral panels around an uninterrupted schematic.
+Blue outlines mark selected tools; blue underlines mark the active workspace.
+Simulation status includes a Play/Pause symbol and text, not color alone.
+Light/Dark appearance remains independent of the Classic/Modern canvas style.
+See the [visual comparison and verification notes](../design/ui-refresh/README.md).
+The older images elsewhere in this guide are historical Classic web captures.
 
 ## Main regions
 

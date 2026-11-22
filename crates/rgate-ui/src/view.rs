@@ -1,22 +1,23 @@
 use crate::{
-    app::{ContextMenu, GateApp, WorkspaceTab},
+    app::{ContextMenu, GateApp, OpenMenu, WorkspaceTab},
     canvas,
     commands::{self, Command, MenuEntry},
     theme::{Appearance, Theme},
 };
 use gpui::{
-    AnyElement, App, AppContext, Context, CursorStyle, DismissEvent, Entity, Focusable, FontWeight,
-    MouseButton, Pixels, SharedString, WeakEntity, Window, anchored, canvas as drawing, deferred,
-    div, prelude::*, px, rgb,
+    AnyElement, App, AppContext, ClickEvent, Context, CursorStyle, DismissEvent, Entity, Focusable,
+    FontWeight, MouseButton, Pixels, SharedString, WeakEntity, Window, anchored, canvas as drawing,
+    deferred, div, prelude::*, px, rgb,
 };
 use gpui_component::{
-    ActiveTheme, Icon, Selectable as _, Sizable as _, Theme as KitTheme, ThemeMode,
+    ActiveTheme, Disableable as _, Icon, Selectable as _, Sizable as _, Theme as KitTheme,
+    ThemeMode,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::Textarea,
     label::Label,
     list::ListItem,
-    menu::{DropdownMenu as _, PopupMenu, PopupMenuItem},
+    menu::{PopupMenu, PopupMenuItem},
     resizable::{ResizableState, h_resizable, resizable_panel, v_resizable},
     scroll::ScrollableElement as _,
     separator::Separator,
@@ -85,12 +86,7 @@ pub fn apply_appearance(appearance: Appearance, window: Option<&mut Window>, cx:
         ThemeMode::Light
     };
     KitTheme::change(mode, window, cx);
-    // The web platform has no system fonts, only the families bundled at startup.
-    if cfg!(target_family = "wasm") {
-        let theme = KitTheme::global_mut(cx);
-        theme.font_family = "IBM Plex Sans".into();
-        theme.mono_font_family = "Lilex".into();
-    }
+    crate::theme::apply_chrome(appearance, cx);
 }
 
 pub fn mono_font() -> &'static str {
@@ -208,32 +204,123 @@ impl GateApp {
         cx: &mut Context<Self>,
     ) -> Button {
         Button::new(id)
-            .icon(icon)
+            .ghost()
+            .small()
+            .icon(Icon::new(icon).small())
             .tooltip(tooltip)
             .selected(active)
+            .when(active, |button| {
+                button.border_1().border_color(cx.theme().primary)
+            })
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.focus.focus(window, cx);
                 this.command(command.clone(), window, cx);
             }))
     }
 
-    fn menu_bar(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn open_top_menu(&mut self, name: &'static str, window: &mut Window, cx: &mut Context<Self>) {
+        self.context_menu = None;
         let app = cx.weak_entity();
         let checks = self.menu_checks();
+        let menu = PopupMenu::build(window, cx, move |menu, _, _| {
+            menu_items(
+                menu.min_w(px(240.0)),
+                commands::entries(name),
+                app,
+                Some(checks),
+            )
+        });
+        menu.focus_handle(cx).focus(window, cx);
+        let dismiss = cx.subscribe_in(
+            &menu,
+            window,
+            move |this, _, _: &DismissEvent, window, cx| {
+                if this
+                    .open_menu
+                    .as_ref()
+                    .is_some_and(|open| open.name == name)
+                {
+                    this.open_menu = None;
+                    this.focus.focus(window, cx);
+                    cx.notify();
+                }
+            },
+        );
+        self.open_menu = Some(OpenMenu {
+            name,
+            menu,
+            _dismiss: dismiss,
+        });
+        cx.notify();
+    }
+
+    fn toggle_top_menu(&mut self, name: &'static str, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .open_menu
+            .as_ref()
+            .is_some_and(|open| open.name == name)
+        {
+            self.open_menu = None;
+            self.focus.focus(window, cx);
+            cx.notify();
+        } else {
+            self.open_top_menu(name, window, cx);
+        }
+    }
+
+    fn menu_bar(&self, cx: &mut Context<Self>) -> AnyElement {
         let mut menus = h_flex().gap_0p5();
         for name in MENUS {
-            let app = app.clone();
+            let active_menu = self
+                .open_menu
+                .as_ref()
+                .filter(|open| open.name == name)
+                .map(|open| open.menu.clone());
+            let is_open = active_menu.is_some();
             menus = menus.child(
-                Button::new(SharedString::from(format!("menu-{name}")))
-                    .ghost()
-                    .xsmall()
-                    .label(name)
-                    .dropdown_menu(move |menu, _, _| {
-                        menu_items(
-                            menu.min_w(px(240.0)),
-                            commands::entries(name),
-                            app.clone(),
-                            Some(checks),
+                div()
+                    .id(SharedString::from(format!("menu-item-{name}")))
+                    .relative()
+                    .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                        if *hovered
+                            && this
+                                .open_menu
+                                .as_ref()
+                                .is_some_and(|open| open.name != name)
+                        {
+                            this.open_top_menu(name, window, cx);
+                        }
+                    }))
+                    .child(
+                        Button::new(SharedString::from(format!("menu-{name}")))
+                            .ghost()
+                            .xsmall()
+                            .label(name)
+                            .open(is_open)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, window, cx| {
+                                    window.prevent_default();
+                                    cx.stop_propagation();
+                                    this.toggle_top_menu(name, window, cx);
+                                }),
+                            )
+                            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                                if matches!(event, ClickEvent::Mouse(_)) {
+                                    return;
+                                }
+                                this.toggle_top_menu(name, window, cx);
+                            })),
+                    )
+                    .when_some(active_menu, |this, menu| {
+                        this.child(
+                            deferred(
+                                anchored()
+                                    .anchor(gpui::Anchor::TopLeft)
+                                    .snap_to_window_with_margin(px(8.0))
+                                    .child(div().occlude().top_1().child(menu)),
+                            )
+                            .with_priority(gpui_base::POPUP_PRIORITY),
                         )
                     }),
             );
@@ -249,7 +336,7 @@ impl GateApp {
             .child(menus)
             .child(div().flex_1())
             .child(
-                Label::new("RGate 0.1 · Rust / GPUI Kit")
+                Label::new("RGate")
                     .text_xs()
                     .text_color(theme.muted_foreground),
             )
@@ -303,22 +390,28 @@ impl GateApp {
             ));
         let history = ToolbarGroup::new("toolbar-history")
             .label("History")
-            .child(self.tool_button(
-                "tool-undo",
-                IconName::Undo2,
-                "Undo (⌘Z)",
-                C::Undo,
-                false,
-                cx,
-            ))
-            .child(self.tool_button(
-                "tool-redo",
-                IconName::Redo2,
-                "Redo (⇧⌘Z)",
-                C::Redo,
-                false,
-                cx,
-            ));
+            .child(
+                self.tool_button(
+                    "tool-undo",
+                    IconName::Undo2,
+                    "Undo (⌘Z)",
+                    C::Undo,
+                    false,
+                    cx,
+                )
+                .disabled(!self.editor.can_undo()),
+            )
+            .child(
+                self.tool_button(
+                    "tool-redo",
+                    IconName::Redo2,
+                    "Redo (⇧⌘Z)",
+                    C::Redo,
+                    false,
+                    cx,
+                )
+                .disabled(!self.editor.can_redo()),
+            );
         let clipboard = ToolbarGroup::new("toolbar-clipboard")
             .label("Clipboard")
             .child(self.tool_button(
@@ -423,14 +516,17 @@ impl GateApp {
                 self.simulation.is_some() && !self.running,
                 cx,
             ))
-            .child(self.tool_button(
-                "tool-stop",
-                IconName::Square,
-                "Stop simulation",
-                C::Stop,
-                false,
-                cx,
-            ))
+            .child(
+                self.tool_button(
+                    "tool-stop",
+                    IconName::Square,
+                    "Stop simulation",
+                    C::Stop,
+                    false,
+                    cx,
+                )
+                .disabled(self.simulation.is_none()),
+            )
             .child(self.tool_button(
                 "tool-step",
                 IconName::StepForward,
@@ -475,8 +571,10 @@ impl GateApp {
             ));
         let separator = || Separator::vertical().h(px(18.0)).mx_1();
         Toolbar::new("main-toolbar")
+            .h(px(32.0))
             .w_full()
             .px_2()
+            .bg(cx.theme().background)
             .border_b_1()
             .border_color(cx.theme().border)
             .child(file)
@@ -859,11 +957,23 @@ impl GateApp {
             status = status.child(
                 h_flex()
                     .gap_1p5()
-                    .child(div().size(px(6.0)).rounded_full().bg(if self.running {
-                        theme.success
-                    } else {
-                        theme.muted_foreground
-                    }))
+                    .px_2()
+                    .py_0p5()
+                    .rounded(px(3.0))
+                    .bg(theme.secondary)
+                    .child(
+                        Icon::new(if self.running {
+                            IconName::Play
+                        } else {
+                            IconName::Pause
+                        })
+                        .small()
+                        .text_color(if self.running {
+                            theme.success
+                        } else {
+                            theme.foreground
+                        }),
+                    )
                     .child(state),
             );
         }
@@ -1208,6 +1318,7 @@ impl GateApp {
         if entries.is_empty() {
             return;
         }
+        self.open_menu = None;
         let app = cx.weak_entity();
         let menu = PopupMenu::build(window, cx, move |menu, _, _| {
             menu_items(menu.min_w(px(220.0)), entries, app, None)

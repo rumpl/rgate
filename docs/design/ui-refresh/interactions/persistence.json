@@ -1,0 +1,96 @@
+{
+  "before": {
+    "version": 1,
+    "theme": "Classic",
+    "appearance": "Light",
+    "sidebar_width": 240,
+    "components_width": 204.99997,
+    "modules_height": 196,
+    "bottom_height": 176,
+    "show_grid": false,
+    "snap": true,
+    "grid": 5,
+    "bottom_scope": false,
+    "module_list": false,
+    "nets_ports": false,
+    "documents": {
+      "untitled:main:Full adder": {
+        "active_module": "main",
+        "debug_path": null,
+        "views": {
+          "module:main": {
+            "zoom": 1.1297176,
+            "pan": {
+              "x": 34.860657,
+              "y": 11.275925
+            }
+          }
+        },
+        "collapsed": [],
+        "probes": [],
+        "waveform": {
+          "start": 0,
+          "span": 1000,
+          "follow": true,
+          "label_width": 250,
+          "cursor_a": null,
+          "cursor_b": null,
+          "order": [],
+          "radices": {},
+          "grouped": false,
+          "collapsed": [],
+          "filter": "",
+          "selected": null,
+          "row_offset": 0
+        }
+      }
+    }
+  },
+  "after": {
+    "version": 1,
+    "theme": "Classic",
+    "appearance": "Light",
+    "sidebar_width": 240,
+    "components_width": 204.99997,
+    "modules_height": 196,
+    "bottom_height": 176,
+    "show_grid": false,
+    "snap": true,
+    "grid": 5,
+    "bottom_scope": false,
+    "module_list": false,
+    "nets_ports": false,
+    "documents": {
+      "untitled:main:Full adder": {
+        "active_module": "main",
+        "debug_path": null,
+        "views": {
+          "module:main": {
+            "zoom": 1.1297176,
+            "pan": {
+              "x": 34.860657,
+              "y": 11.275925
+            }
+          }
+        },
+        "collapsed": [],
+        "probes": [],
+        "waveform": {
+          "start": 0,
+          "span": 1000,
+          "follow": true,
+          "label_width": 250,
+          "cursor_a": null,
+          "cursor_b": null,
+          "order": [],
+          "radices": {},
+          "grouped": false,
+          "collapsed": [],
+          "filter": "",
+          "selected": null,
+          "row_offset": 0
+        }
+      }
+    }
+  }
+}
