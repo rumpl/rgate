@@ -1,11 +1,11 @@
+use super::behavior::BehaviorLowerer;
 use super::const_eval::{clog2, eval_const_expr, eval_const_i64};
 use super::ir::{ElabExpr, ElabLValue, ElabStmt, SigId};
-use super::Elaborator;
 use crate::ast::{Expr, LValue, Stmt};
 use crate::value::BitVec;
 use std::collections::HashMap;
 
-impl<'a> Elaborator<'a> {
+impl BehaviorLowerer {
     pub(super) fn elab_stmt(
         &mut self,
         scope_idx: usize,
@@ -96,10 +96,10 @@ impl<'a> Elaborator<'a> {
                     } = init_stmt.as_ref()
                     && p.len() == 1
                     && !inner_locals.contains_key(&p[0])
-                    && !self.scopes[scope_idx].sigs.contains_key(&p[0])
+                    && !self.symbols.scopes[scope_idx].sigs.contains_key(&p[0])
                 {
-                    let s = self.alloc_signal(
-                        format!("{}.__for_{}", self.scopes[scope_idx].path, p[0]),
+                    let s = self.symbols.alloc_signal(
+                        format!("{}.__for_{}", self.symbols.scopes[scope_idx].path, p[0]),
                         31,
                         0,
                         true,
@@ -173,7 +173,7 @@ impl<'a> Elaborator<'a> {
                     .iter()
                     .map(|a| self.elab_expr(scope_idx, a, locals))
                     .collect::<Result<Vec<_>, _>>()?;
-                if let Some(&task_id) = self.scopes[scope_idx].tasks.get(name) {
+                if let Some(&task_id) = self.symbols.scopes[scope_idx].tasks.get(name) {
                     ElabStmt::TaskCall {
                         task_id,
                         args: eargs,
@@ -208,18 +208,21 @@ impl<'a> Elaborator<'a> {
     ) -> Result<ElabLValue, String> {
         match lv {
             LValue::Ident(path) => {
-                let sig = self.resolve_sig(scope_idx, path, locals).ok_or_else(|| {
-                    format!(
-                        "unknown signal `{}` in `{}`",
-                        path.join("."),
-                        self.scopes[scope_idx].path
-                    )
-                })?;
+                let sig = self
+                    .symbols
+                    .resolve_sig(scope_idx, path, locals)
+                    .ok_or_else(|| {
+                        format!(
+                            "unknown signal `{}` in `{}`",
+                            path.join("."),
+                            self.symbols.scopes[scope_idx].path
+                        )
+                    })?;
                 Ok(ElabLValue::Signal(sig))
             }
             LValue::Index { target, index } => {
                 if let LValue::Ident(path) = target.as_ref()
-                    && let Some(mem) = self.resolve_mem(scope_idx, path)
+                    && let Some(mem) = self.symbols.resolve_mem(scope_idx, path)
                 {
                     return Ok(ElabLValue::MemElem {
                         mem,
@@ -238,8 +241,8 @@ impl<'a> Elaborator<'a> {
                 let ElabLValue::Signal(sig) = self.elab_lvalue(scope_idx, target, locals)? else {
                     return Err("unsupported nested range in lvalue".into());
                 };
-                let m = eval_const_i64(msb, &self.scopes[scope_idx].params)?;
-                let l = eval_const_i64(lsb, &self.scopes[scope_idx].params)?;
+                let m = eval_const_i64(msb, &self.symbols.scopes[scope_idx].params)?;
+                let l = eval_const_i64(lsb, &self.symbols.scopes[scope_idx].params)?;
                 Ok(ElabLValue::PartSelect {
                     sig,
                     msb: m,
@@ -255,7 +258,8 @@ impl<'a> Elaborator<'a> {
                 let ElabLValue::Signal(sig) = self.elab_lvalue(scope_idx, target, locals)? else {
                     return Err("unsupported nested indexed part-select in lvalue".into());
                 };
-                let w = eval_const_i64(width, &self.scopes[scope_idx].params)?.max(1) as usize;
+                let w =
+                    eval_const_i64(width, &self.symbols.scopes[scope_idx].params)?.max(1) as usize;
                 Ok(ElabLValue::IndexedPart {
                     sig,
                     base: self.elab_expr(scope_idx, base, locals)?,
@@ -278,7 +282,7 @@ impl<'a> Elaborator<'a> {
         expr: &Expr,
         locals: &HashMap<String, SigId>,
     ) -> Result<ElabExpr, String> {
-        let params = &self.scopes[scope_idx].params;
+        let params = &self.symbols.scopes[scope_idx].params;
         Ok(match expr {
             Expr::Int(n) => ElabExpr::Const(BitVec::from_i64(*n as i64, 32)),
             Expr::Based { value, .. } => ElabExpr::Const(value.clone()),
@@ -291,18 +295,18 @@ impl<'a> Elaborator<'a> {
                 {
                     return Ok(ElabExpr::Const(val.clone()));
                 }
-                if let Some(sig) = self.resolve_sig(scope_idx, path, locals) {
+                if let Some(sig) = self.symbols.resolve_sig(scope_idx, path, locals) {
                     return Ok(ElabExpr::Signal(sig));
                 }
                 return Err(format!(
                     "unknown identifier `{}` in `{}`",
                     path.join("."),
-                    self.scopes[scope_idx].path
+                    self.symbols.scopes[scope_idx].path
                 ));
             }
             Expr::Index { target, index } => {
                 if let Expr::Ident(path) = target.as_ref()
-                    && let Some(mem) = self.resolve_mem(scope_idx, path)
+                    && let Some(mem) = self.symbols.resolve_mem(scope_idx, path)
                 {
                     return Ok(ElabExpr::MemRead {
                         mem,
@@ -390,7 +394,7 @@ impl<'a> Elaborator<'a> {
                 else_expr: Box::new(self.elab_expr(scope_idx, else_expr, locals)?),
             },
             Expr::Call { name, args } => {
-                let func_id = *self.scopes[scope_idx]
+                let func_id = *self.symbols.scopes[scope_idx]
                     .funcs
                     .get(name)
                     .ok_or_else(|| format!("unknown function `{name}`"))?;

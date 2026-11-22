@@ -2,9 +2,10 @@ use super::const_eval::{eval_const_expr, eval_range};
 use super::deps::{collect_expr_deps, collect_stmt_reads};
 use super::expr::expr_to_lvalue;
 use super::ir::{
-    ContinuousAssign, ElabEvent, ElabExpr, ElabLValue, ElabStmt, ProcessInfo, ProcessKind, SigId,
+    ContinuousAssign, Design, ElabEvent, ElabExpr, ElabLValue, ElabStmt, ProcessInfo, ProcessKind,
+    SigId,
 };
-use super::Elaborator;
+use super::symbols::SymbolTable;
 use crate::ast::{
     AlwaysKind, BinaryOp, EventExpr, Expr, ModuleItem, PortDir, PrimitiveKind, Stmt, UnaryOp,
 };
@@ -12,13 +13,52 @@ use crate::value::BitVec;
 use rgate_core::Logic;
 use std::collections::HashMap;
 
-impl<'a> Elaborator<'a> {
-    pub(super) fn elaborate_scope_behavior(&mut self, scope_idx: usize) -> Result<(), String> {
-        let unit_ticks = (self.scopes[scope_idx].timescale.unit_fs / self.precision_fs).max(1);
-        let wire_inits = self.scopes[scope_idx].wire_inits.clone();
-        let reg_inits = self.scopes[scope_idx].reg_inits.clone();
-        let child_conns = self.scopes[scope_idx].child_conns.clone();
-        let items = self.scopes[scope_idx].items.clone();
+/// Pass 2: lowers expanded scopes from `SymbolTable` into continuous assigns,
+/// processes, and function/task bodies, producing a finalized `Design`.
+pub(super) struct BehaviorLowerer {
+    pub(super) symbols: SymbolTable,
+    precision_fs: u64,
+    assigns: Vec<ContinuousAssign>,
+    processes: Vec<ProcessInfo>,
+    next_driver_id: usize,
+}
+
+impl BehaviorLowerer {
+    pub(super) fn new(symbols: SymbolTable, precision_fs: u64) -> Self {
+        Self {
+            symbols,
+            precision_fs,
+            assigns: Vec::new(),
+            processes: Vec::new(),
+            next_driver_id: 0,
+        }
+    }
+
+    pub(super) fn lower(mut self, top_name: &str, ticks_per_ns: u64) -> Result<Design, String> {
+        for scope_idx in 0..self.symbols.scopes.len() {
+            self.elaborate_scope_behavior(scope_idx)?;
+        }
+        Ok(Design {
+            top: top_name.to_string(),
+            precision_fs: self.precision_fs,
+            ticks_per_ns,
+            signals: self.symbols.signals,
+            memories: self.symbols.memories,
+            path_to_sig: self.symbols.path_to_sig,
+            assigns: self.assigns,
+            processes: self.processes,
+            functions: self.symbols.functions,
+            tasks: self.symbols.tasks,
+        })
+    }
+
+    fn elaborate_scope_behavior(&mut self, scope_idx: usize) -> Result<(), String> {
+        let unit_ticks =
+            (self.symbols.scopes[scope_idx].timescale.unit_fs / self.precision_fs).max(1);
+        let wire_inits = self.symbols.scopes[scope_idx].wire_inits.clone();
+        let reg_inits = self.symbols.scopes[scope_idx].reg_inits.clone();
+        let child_conns = self.symbols.scopes[scope_idx].child_conns.clone();
+        let items = self.symbols.scopes[scope_idx].items.clone();
 
         // 1. Wire initializers -> continuous assignments
         for (sig_id, expr) in wire_inits {
@@ -30,8 +70,8 @@ impl<'a> Elaborator<'a> {
         if !reg_inits.is_empty() {
             let mut stmts = Vec::new();
             for (sig_id, expr) in reg_inits {
-                if let Ok(val) = eval_const_expr(&expr, &self.scopes[scope_idx].params) {
-                    let sig = &mut self.signals[sig_id.0];
+                if let Ok(val) = eval_const_expr(&expr, &self.symbols.scopes[scope_idx].params) {
+                    let sig = &mut self.symbols.signals[sig_id.0];
                     sig.init = val.resized(sig.width, sig.signed);
                 } else {
                     let rhs = self.elab_expr(scope_idx, &expr, &HashMap::new())?;
@@ -56,7 +96,7 @@ impl<'a> Elaborator<'a> {
 
         // 3. Port connections to child instances
         for (child_idx, conns) in child_conns {
-            let child_ports = self.scopes[child_idx].ports.clone();
+            let child_ports = self.symbols.scopes[child_idx].ports.clone();
             for (pos, (pname, expr_opt)) in conns.into_iter().enumerate() {
                 let Some(expr) = expr_opt else { continue };
                 let (port_name, dir) = if let Some(n) = pname {
@@ -67,7 +107,7 @@ impl<'a> Elaborator<'a> {
                         .ok_or_else(|| {
                             format!(
                                 "unknown port `.{n}` on module `{}`",
-                                self.scopes[child_idx].module_name
+                                self.symbols.scopes[child_idx].module_name
                             )
                         })?;
                     (n, d)
@@ -75,11 +115,11 @@ impl<'a> Elaborator<'a> {
                     child_ports.get(pos).cloned().ok_or_else(|| {
                         format!(
                             "too many positional ports on `{}`",
-                            self.scopes[child_idx].path
+                            self.symbols.scopes[child_idx].path
                         )
                     })?
                 };
-                let Some(&child_sig) = self.scopes[child_idx].sigs.get(&port_name) else {
+                let Some(&child_sig) = self.symbols.scopes[child_idx].sigs.get(&port_name) else {
                     continue;
                 };
                 match dir {
@@ -192,21 +232,24 @@ impl<'a> Elaborator<'a> {
                     });
                 }
                 ModuleItem::Function(f) => {
-                    let func_id = self.scopes[scope_idx].funcs[&f.name];
-                    let ret_sig = self.functions[func_id].return_sig;
+                    let func_id = self.symbols.scopes[scope_idx].funcs[&f.name];
+                    let ret_sig = self.symbols.functions[func_id].return_sig;
                     let mut locals = HashMap::new();
                     locals.insert(f.name.clone(), ret_sig);
                     let mut param_sigs = Vec::new();
                     for inp in &f.inputs {
                         let (msb, lsb) = if let Some(r) = &inp.range {
-                            eval_range(r, &self.scopes[scope_idx].params)?
+                            eval_range(r, &self.symbols.scopes[scope_idx].params)?
                         } else {
                             (0, 0)
                         };
                         let w = ((msb - lsb).unsigned_abs() as usize + 1).max(1);
                         for v in &inp.items {
-                            let s = self.alloc_signal(
-                                format!("{}.__fn_{}_{}", self.scopes[scope_idx].path, f.name, v.name),
+                            let s = self.symbols.alloc_signal(
+                                format!(
+                                    "{}.__fn_{}_{}",
+                                    self.symbols.scopes[scope_idx].path, f.name, v.name
+                                ),
                                 msb,
                                 lsb,
                                 inp.signed,
@@ -223,23 +266,26 @@ impl<'a> Elaborator<'a> {
                     for st in &f.body {
                         body.push(self.elab_stmt(scope_idx, st, unit_ticks, &mut locals)?);
                     }
-                    self.functions[func_id].param_sigs = param_sigs;
-                    self.functions[func_id].body = body;
+                    self.symbols.functions[func_id].param_sigs = param_sigs;
+                    self.symbols.functions[func_id].body = body;
                 }
                 ModuleItem::Task(t) => {
-                    let task_id = self.scopes[scope_idx].tasks[&t.name];
+                    let task_id = self.symbols.scopes[scope_idx].tasks[&t.name];
                     let mut locals = HashMap::new();
                     let mut param_sigs = Vec::new();
                     for inp in &t.inputs {
                         let (msb, lsb) = if let Some(r) = &inp.range {
-                            eval_range(r, &self.scopes[scope_idx].params)?
+                            eval_range(r, &self.symbols.scopes[scope_idx].params)?
                         } else {
                             (0, 0)
                         };
                         let w = ((msb - lsb).unsigned_abs() as usize + 1).max(1);
                         for v in &inp.items {
-                            let s = self.alloc_signal(
-                                format!("{}.__tk_{}_{}", self.scopes[scope_idx].path, t.name, v.name),
+                            let s = self.symbols.alloc_signal(
+                                format!(
+                                    "{}.__tk_{}_{}",
+                                    self.symbols.scopes[scope_idx].path, t.name, v.name
+                                ),
                                 msb,
                                 lsb,
                                 inp.signed,
@@ -256,8 +302,8 @@ impl<'a> Elaborator<'a> {
                     for st in &t.body {
                         body.push(self.elab_stmt(scope_idx, st, unit_ticks, &mut locals)?);
                     }
-                    self.tasks[task_id].param_sigs = param_sigs;
-                    self.tasks[task_id].body = body;
+                    self.symbols.tasks[task_id].param_sigs = param_sigs;
+                    self.symbols.tasks[task_id].body = body;
                 }
                 _ => {}
             }
@@ -399,14 +445,14 @@ impl<'a> Elaborator<'a> {
         for d in decls {
             if let ModuleItem::VarDecl(vd) = d {
                 let (msb, lsb) = if let Some(r) = &vd.range {
-                    eval_range(r, &self.scopes[scope_idx].params)?
+                    eval_range(r, &self.symbols.scopes[scope_idx].params)?
                 } else {
                     (0, 0)
                 };
                 let w = ((msb - lsb).unsigned_abs() as usize + 1).max(1);
                 for v in &vd.items {
-                    let s = self.alloc_signal(
-                        format!("{}.__local_{}", self.scopes[scope_idx].path, v.name),
+                    let s = self.symbols.alloc_signal(
+                        format!("{}.__local_{}", self.symbols.scopes[scope_idx].path, v.name),
                         msb,
                         lsb,
                         vd.signed,
@@ -433,7 +479,7 @@ impl<'a> Elaborator<'a> {
         match expr {
             Expr::Real(r) => Ok((*r * unit_ticks as f64).round().max(0.0) as u64),
             other => {
-                let v = eval_const_expr(other, &self.scopes[scope_idx].params)?;
+                let v = eval_const_expr(other, &self.symbols.scopes[scope_idx].params)?;
                 let n = v.to_u64().unwrap_or(0);
                 Ok(n.saturating_mul(unit_ticks))
             }
