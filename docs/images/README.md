@@ -1,6 +1,6 @@
 # Screenshot provenance
 
-`editor.png` was refreshed on 2026-11-22 from the existing local web build
+`editor.png` and `readme-editor.png` were refreshed on 2026-11-22 from the existing local web build
 using headless Chromium, Light appearance, and Classic theme. The other PNGs
 were captured on 2026-10-10 in Chrome. All use a 1440×1000 CSS-pixel viewport.
 No UI mockups or overlays were added.
@@ -8,6 +8,7 @@ No UI mockups or overlays were added.
 | Image                | Captured view                                                                     |
 | -------------------- | --------------------------------------------------------------------------------- |
 | `editor.png`         | Startup full adder, Edit mode, component palette and Messages                     |
+| `readme-editor.png`  | Same capture as `editor.png`, with a distinct URL for the repository README       |
 | `led-properties.png` | LED properties, display choices and recommended-width guidance                    |
 | `waveforms.png`      | Full-adder live values, three probes, scalar transitions, enlarged waveform panel |
 | `lc3.png`            | LC-3 imported/generated circuit, module hierarchy and memory/CPU connections      |
