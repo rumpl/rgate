@@ -69,308 +69,7 @@ impl Preprocessor {
     }
 
     pub fn process(&mut self, default_file: &str, input: &str) -> Result<Preprocessed, String> {
-        let mut out = String::with_capacity(input.len());
-        let mut line_map: Vec<(String, u32)> = Vec::new();
-        let mut file = default_file.to_string();
-        let mut line: u32 = 1;
-        let mut if_stack: Vec<IfFrame> = Vec::new();
-        let mut local_timescale: Option<Timescale> = None;
-
-        line_map.push((file.clone(), line));
-
-        let bytes = input.as_bytes();
-        let mut i = 0usize;
-
-        while i < bytes.len() {
-            let active = if_stack.last().is_none_or(|f| f.branch_active);
-
-            // Newline
-            if bytes[i] == b'\n' {
-                out.push('\n');
-                line += 1;
-                line_map.push((file.clone(), line));
-                i += 1;
-                continue;
-            }
-            if bytes[i] == b'\r' {
-                i += 1;
-                continue;
-            }
-
-            // Line comment
-            if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
-                i += 2;
-                while i < bytes.len() && bytes[i] != b'\n' {
-                    i += 1;
-                }
-                continue;
-            }
-
-            // Block comment
-            if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
-                i += 2;
-                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                    if bytes[i] == b'\n' {
-                        out.push('\n');
-                        line += 1;
-                        line_map.push((file.clone(), line));
-                    }
-                    i += 1;
-                }
-                if i + 1 < bytes.len() {
-                    i += 2;
-                } else {
-                    return Err(format!("{file}:{line}: unterminated block comment"));
-                }
-                if active {
-                    out.push(' ');
-                }
-                continue;
-            }
-
-            // String literal
-            if bytes[i] == b'"' {
-                let start = i;
-                i += 1;
-                while i < bytes.len() && bytes[i] != b'"' {
-                    if bytes[i] == b'\\' && i + 1 < bytes.len() {
-                        i += 2;
-                    } else if bytes[i] == b'\n' {
-                        break;
-                    } else {
-                        i += 1;
-                    }
-                }
-                if i < bytes.len() && bytes[i] == b'"' {
-                    i += 1;
-                }
-                if active {
-                    out.push_str(&input[start..i]);
-                }
-                continue;
-            }
-
-            // Compiler directive or macro invocation
-            if bytes[i] == b'`' {
-                i += 1;
-                let name_start = i;
-                while i < bytes.len() && is_ident_cont(bytes[i]) {
-                    i += 1;
-                }
-                let name = &input[name_start..i];
-                match name {
-                    "ifdef" | "ifndef" => {
-                        skip_hspace(bytes, &mut i);
-                        let sym = read_ident(input, &mut i);
-                        let defined = self.macros.contains_key(sym);
-                        let cond = if name == "ifdef" { defined } else { !defined };
-                        let parent_active = active;
-                        if_stack.push(IfFrame {
-                            parent_active,
-                            branch_active: parent_active && cond,
-                            any_taken: cond,
-                        });
-                    }
-                    "elsif" => {
-                        skip_hspace(bytes, &mut i);
-                        let sym = read_ident(input, &mut i);
-                        let defined = self.macros.contains_key(sym);
-                        let frame = if_stack
-                            .last_mut()
-                            .ok_or_else(|| format!("{file}:{line}: unexpected `elsif"))?;
-                        if frame.parent_active && !frame.any_taken && defined {
-                            frame.branch_active = true;
-                            frame.any_taken = true;
-                        } else {
-                            frame.branch_active = false;
-                        }
-                    }
-                    "else" => {
-                        let frame = if_stack
-                            .last_mut()
-                            .ok_or_else(|| format!("{file}:{line}: unexpected `else"))?;
-                        frame.branch_active = frame.parent_active && !frame.any_taken;
-                        frame.any_taken = true;
-                    }
-                    "endif" => {
-                        if if_stack.pop().is_none() {
-                            return Err(format!("{file}:{line}: unexpected `endif"));
-                        }
-                    }
-                    "define" => {
-                        skip_hspace(bytes, &mut i);
-                        let mname = read_ident(input, &mut i).to_string();
-                        let mut params = None;
-                        // Function-like macro iff '(' immediately follows name (no whitespace)
-                        if i < bytes.len() && bytes[i] == b'(' {
-                            i += 1;
-                            let mut plist = Vec::new();
-                            loop {
-                                skip_hspace(bytes, &mut i);
-                                if i >= bytes.len() || bytes[i] == b')' {
-                                    if i < bytes.len() {
-                                        i += 1;
-                                    }
-                                    break;
-                                }
-                                let p = read_ident(input, &mut i).to_string();
-                                // Skip optional default value `= ...`
-                                skip_hspace(bytes, &mut i);
-                                if i < bytes.len() && bytes[i] == b'=' {
-                                    while i < bytes.len() && bytes[i] != b',' && bytes[i] != b')' {
-                                        i += 1;
-                                    }
-                                }
-                                if !p.is_empty() {
-                                    plist.push(p);
-                                }
-                                skip_hspace(bytes, &mut i);
-                                if i < bytes.len() && bytes[i] == b',' {
-                                    i += 1;
-                                }
-                            }
-                            params = Some(plist);
-                        }
-                        skip_hspace(bytes, &mut i);
-                        let mut body = String::new();
-                        while i < bytes.len() && bytes[i] != b'\n' {
-                            if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                                body.push(' ');
-                                out.push('\n');
-                                line += 1;
-                                line_map.push((file.clone(), line));
-                                i += 2;
-                                continue;
-                            }
-                            if bytes[i] == b'\\'
-                                && i + 2 < bytes.len()
-                                && bytes[i + 1] == b'\r'
-                                && bytes[i + 2] == b'\n'
-                            {
-                                body.push(' ');
-                                out.push('\n');
-                                line += 1;
-                                line_map.push((file.clone(), line));
-                                i += 3;
-                                continue;
-                            }
-                            if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
-                                while i < bytes.len() && bytes[i] != b'\n' {
-                                    i += 1;
-                                }
-                                break;
-                            }
-                            if bytes[i] != b'\r' {
-                                body.push(bytes[i] as char);
-                            }
-                            i += 1;
-                        }
-                        if active && !mname.is_empty() {
-                            self.macros.insert(
-                                mname,
-                                MacroDef {
-                                    params,
-                                    body: body.trim().to_string(),
-                                },
-                            );
-                        }
-                    }
-                    "undef" => {
-                        skip_hspace(bytes, &mut i);
-                        let mname = read_ident(input, &mut i);
-                        if active {
-                            self.macros.remove(mname);
-                        }
-                    }
-                    "timescale" => {
-                        let start = i;
-                        while i < bytes.len() && bytes[i] != b'\n' {
-                            if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
-                                break;
-                            }
-                            i += 1;
-                        }
-                        if active {
-                            let spec = input[start..i].trim();
-                            let ts = parse_timescale(spec)
-                                .ok_or_else(|| format!("{file}:{line}: invalid timescale `{spec}`"))?;
-                            local_timescale = Some(ts);
-                            self.timescale = Some(match self.timescale {
-                                Some(prev) => Timescale {
-                                    unit_fs: ts.unit_fs,
-                                    precision_fs: prev.precision_fs.min(ts.precision_fs),
-                                },
-                                None => ts,
-                            });
-                        }
-                    }
-                    "line" => {
-                        let start = i;
-                        while i < bytes.len() && bytes[i] != b'\n' {
-                            i += 1;
-                        }
-                        let rest = input[start..i].trim();
-                        if let Some((num, fname)) = parse_line_directive(rest) {
-                            file = fname;
-                            // Subtract 1 because the trailing `\n` will increment `line`
-                            line = num.saturating_sub(1);
-                        }
-                    }
-                    "default_nettype"
-                    | "resetall"
-                    | "celldefine"
-                    | "endcelldefine"
-                    | "begin_keywords"
-                    | "end_keywords"
-                    | "pragma"
-                    | "nounconnected_drive"
-                    | "unconnected_drive" => {
-                        while i < bytes.len() && bytes[i] != b'\n' {
-                            i += 1;
-                        }
-                    }
-                    _ => {
-                        if active
-                            && let Some(mdef) = self.macros.get(name).cloned()
-                        {
-                            let expanded = if let Some(params) = &mdef.params {
-                                skip_hspace(bytes, &mut i);
-                                let args = if i < bytes.len() && bytes[i] == b'(' {
-                                    read_macro_args(
-                                        input,
-                                        &mut i,
-                                        &mut line,
-                                        &mut out,
-                                        &mut line_map,
-                                        &file,
-                                    )
-                                } else {
-                                    Vec::new()
-                                };
-                                substitute_macro(&mdef.body, params, &args)
-                            } else {
-                                mdef.body.clone()
-                            };
-                            let resolved = self.expand_text(&expanded, 0);
-                            out.push_str(&resolved);
-                        }
-                    }
-                }
-                continue;
-            }
-
-            if active {
-                out.push(bytes[i] as char);
-            }
-            i += 1;
-        }
-
-        let timescale = local_timescale.or(self.timescale).unwrap_or_default();
-        Ok(Preprocessed {
-            text: out,
-            line_map,
-            timescale,
-        })
+        PreprocessCursor::new(self, default_file, input).run()
     }
 
     fn expand_text(&self, text: &str, depth: usize) -> String {
@@ -411,6 +110,366 @@ impl Preprocessor {
             }
         }
         out
+    }
+}
+
+struct PreprocessCursor<'a> {
+    pp: &'a mut Preprocessor,
+    input: &'a str,
+    bytes: &'a [u8],
+    pos: usize,
+    out: String,
+    line_map: Vec<(String, u32)>,
+    file: String,
+    line: u32,
+    if_stack: Vec<IfFrame>,
+    local_timescale: Option<Timescale>,
+}
+
+impl<'a> PreprocessCursor<'a> {
+    fn new(pp: &'a mut Preprocessor, default_file: &str, input: &'a str) -> Self {
+        let file = default_file.to_string();
+        let line_map = vec![(file.clone(), 1)];
+        Self {
+            pp,
+            input,
+            bytes: input.as_bytes(),
+            pos: 0,
+            out: String::with_capacity(input.len()),
+            line_map,
+            file,
+            line: 1,
+            if_stack: Vec::new(),
+            local_timescale: None,
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.if_stack.last().is_none_or(|f| f.branch_active)
+    }
+
+    fn emit_newline(&mut self) {
+        self.out.push('\n');
+        self.line += 1;
+        self.line_map.push((self.file.clone(), self.line));
+    }
+
+    fn run(mut self) -> Result<Preprocessed, String> {
+        while self.pos < self.bytes.len() {
+            let active = self.is_active();
+            let b = self.bytes[self.pos];
+            if b == b'\n' {
+                self.emit_newline();
+                self.pos += 1;
+            } else if b == b'\r' {
+                self.pos += 1;
+            } else if b == b'/'
+                && self.pos + 1 < self.bytes.len()
+                && self.bytes[self.pos + 1] == b'/'
+            {
+                self.skip_line_comment();
+            } else if b == b'/'
+                && self.pos + 1 < self.bytes.len()
+                && self.bytes[self.pos + 1] == b'*'
+            {
+                self.skip_block_comment(active)?;
+            } else if b == b'"' {
+                self.scan_string(active);
+            } else if b == b'`' {
+                self.handle_directive(active)?;
+            } else {
+                if active {
+                    self.out.push(b as char);
+                }
+                self.pos += 1;
+            }
+        }
+        let timescale = self.local_timescale.or(self.pp.timescale).unwrap_or_default();
+        Ok(Preprocessed {
+            text: self.out,
+            line_map: self.line_map,
+            timescale,
+        })
+    }
+
+    fn skip_line_comment(&mut self) {
+        self.pos += 2;
+        while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
+            self.pos += 1;
+        }
+    }
+
+    fn skip_block_comment(&mut self, active: bool) -> Result<(), String> {
+        self.pos += 2;
+        while self.pos + 1 < self.bytes.len()
+            && !(self.bytes[self.pos] == b'*' && self.bytes[self.pos + 1] == b'/')
+        {
+            if self.bytes[self.pos] == b'\n' {
+                self.emit_newline();
+            }
+            self.pos += 1;
+        }
+        if self.pos + 1 < self.bytes.len() {
+            self.pos += 2;
+        } else {
+            return Err(format!(
+                "{}:{}: unterminated block comment",
+                self.file, self.line
+            ));
+        }
+        if active {
+            self.out.push(' ');
+        }
+        Ok(())
+    }
+
+    fn scan_string(&mut self, active: bool) {
+        let start = self.pos;
+        self.pos += 1;
+        while self.pos < self.bytes.len() && self.bytes[self.pos] != b'"' {
+            if self.bytes[self.pos] == b'\\' && self.pos + 1 < self.bytes.len() {
+                self.pos += 2;
+            } else if self.bytes[self.pos] == b'\n' {
+                break;
+            } else {
+                self.pos += 1;
+            }
+        }
+        if self.pos < self.bytes.len() && self.bytes[self.pos] == b'"' {
+            self.pos += 1;
+        }
+        if active {
+            self.out.push_str(&self.input[start..self.pos]);
+        }
+    }
+
+    fn handle_directive(&mut self, active: bool) -> Result<(), String> {
+        self.pos += 1;
+        let name_start = self.pos;
+        while self.pos < self.bytes.len() && is_ident_cont(self.bytes[self.pos]) {
+            self.pos += 1;
+        }
+        let name = &self.input[name_start..self.pos];
+        match name {
+            "ifdef" | "ifndef" => {
+                skip_hspace(self.bytes, &mut self.pos);
+                let sym = read_ident(self.input, &mut self.pos);
+                let defined = self.pp.macros.contains_key(sym);
+                let cond = if name == "ifdef" { defined } else { !defined };
+                self.if_stack.push(IfFrame {
+                    parent_active: active,
+                    branch_active: active && cond,
+                    any_taken: cond,
+                });
+            }
+            "elsif" => {
+                skip_hspace(self.bytes, &mut self.pos);
+                let sym = read_ident(self.input, &mut self.pos);
+                let defined = self.pp.macros.contains_key(sym);
+                let frame = self
+                    .if_stack
+                    .last_mut()
+                    .ok_or_else(|| format!("{}:{}: unexpected `elsif", self.file, self.line))?;
+                if frame.parent_active && !frame.any_taken && defined {
+                    frame.branch_active = true;
+                    frame.any_taken = true;
+                } else {
+                    frame.branch_active = false;
+                }
+            }
+            "else" => {
+                let frame = self
+                    .if_stack
+                    .last_mut()
+                    .ok_or_else(|| format!("{}:{}: unexpected `else", self.file, self.line))?;
+                frame.branch_active = frame.parent_active && !frame.any_taken;
+                frame.any_taken = true;
+            }
+            "endif" => {
+                if self.if_stack.pop().is_none() {
+                    return Err(format!("{}:{}: unexpected `endif", self.file, self.line));
+                }
+            }
+            "define" => self.handle_define(active),
+            "undef" => {
+                skip_hspace(self.bytes, &mut self.pos);
+                let mname = read_ident(self.input, &mut self.pos);
+                if active {
+                    self.pp.macros.remove(mname);
+                }
+            }
+            "timescale" => self.handle_timescale(active)?,
+            "line" => self.handle_line(),
+            "default_nettype"
+            | "resetall"
+            | "celldefine"
+            | "endcelldefine"
+            | "begin_keywords"
+            | "end_keywords"
+            | "pragma"
+            | "nounconnected_drive"
+            | "unconnected_drive" => {
+                while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
+                    self.pos += 1;
+                }
+            }
+            _ => {
+                if active {
+                    self.expand_macro_invocation(name);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_define(&mut self, active: bool) {
+        skip_hspace(self.bytes, &mut self.pos);
+        let mname = read_ident(self.input, &mut self.pos).to_string();
+        let mut params = None;
+        // Function-like macro iff '(' immediately follows name (no whitespace)
+        if self.pos < self.bytes.len() && self.bytes[self.pos] == b'(' {
+            self.pos += 1;
+            let mut plist = Vec::new();
+            loop {
+                skip_hspace(self.bytes, &mut self.pos);
+                if self.pos >= self.bytes.len() || self.bytes[self.pos] == b')' {
+                    if self.pos < self.bytes.len() {
+                        self.pos += 1;
+                    }
+                    break;
+                }
+                let p = read_ident(self.input, &mut self.pos).to_string();
+                // Skip optional default value `= ...`
+                skip_hspace(self.bytes, &mut self.pos);
+                if self.pos < self.bytes.len() && self.bytes[self.pos] == b'=' {
+                    while self.pos < self.bytes.len()
+                        && self.bytes[self.pos] != b','
+                        && self.bytes[self.pos] != b')'
+                    {
+                        self.pos += 1;
+                    }
+                }
+                if !p.is_empty() {
+                    plist.push(p);
+                }
+                skip_hspace(self.bytes, &mut self.pos);
+                if self.pos < self.bytes.len() && self.bytes[self.pos] == b',' {
+                    self.pos += 1;
+                }
+            }
+            params = Some(plist);
+        }
+        skip_hspace(self.bytes, &mut self.pos);
+        let mut body = String::new();
+        while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
+            if self.bytes[self.pos] == b'\\'
+                && self.pos + 1 < self.bytes.len()
+                && self.bytes[self.pos + 1] == b'\n'
+            {
+                body.push(' ');
+                self.emit_newline();
+                self.pos += 2;
+                continue;
+            }
+            if self.bytes[self.pos] == b'\\'
+                && self.pos + 2 < self.bytes.len()
+                && self.bytes[self.pos + 1] == b'\r'
+                && self.bytes[self.pos + 2] == b'\n'
+            {
+                body.push(' ');
+                self.emit_newline();
+                self.pos += 3;
+                continue;
+            }
+            if self.bytes[self.pos] == b'/'
+                && self.pos + 1 < self.bytes.len()
+                && self.bytes[self.pos + 1] == b'/'
+            {
+                while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
+                    self.pos += 1;
+                }
+                break;
+            }
+            if self.bytes[self.pos] != b'\r' {
+                body.push(self.bytes[self.pos] as char);
+            }
+            self.pos += 1;
+        }
+        if active && !mname.is_empty() {
+            self.pp.macros.insert(
+                mname,
+                MacroDef {
+                    params,
+                    body: body.trim().to_string(),
+                },
+            );
+        }
+    }
+
+    fn handle_timescale(&mut self, active: bool) -> Result<(), String> {
+        let start = self.pos;
+        while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
+            if self.bytes[self.pos] == b'/'
+                && self.pos + 1 < self.bytes.len()
+                && self.bytes[self.pos + 1] == b'/'
+            {
+                break;
+            }
+            self.pos += 1;
+        }
+        if active {
+            let spec = self.input[start..self.pos].trim();
+            let ts = parse_timescale(spec)
+                .ok_or_else(|| format!("{}:{}: invalid timescale `{spec}`", self.file, self.line))?;
+            self.local_timescale = Some(ts);
+            self.pp.timescale = Some(match self.pp.timescale {
+                Some(prev) => Timescale {
+                    unit_fs: ts.unit_fs,
+                    precision_fs: prev.precision_fs.min(ts.precision_fs),
+                },
+                None => ts,
+            });
+        }
+        Ok(())
+    }
+
+    fn handle_line(&mut self) {
+        let start = self.pos;
+        while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
+            self.pos += 1;
+        }
+        let rest = self.input[start..self.pos].trim();
+        if let Some((num, fname)) = parse_line_directive(rest) {
+            self.file = fname;
+            // Subtract 1 because the trailing `\n` will increment `line`
+            self.line = num.saturating_sub(1);
+        }
+    }
+
+    fn expand_macro_invocation(&mut self, name: &str) {
+        let Some(mdef) = self.pp.macros.get(name).cloned() else {
+            return;
+        };
+        let expanded = if let Some(params) = &mdef.params {
+            skip_hspace(self.bytes, &mut self.pos);
+            let args = if self.pos < self.bytes.len() && self.bytes[self.pos] == b'(' {
+                read_macro_args(
+                    self.input,
+                    &mut self.pos,
+                    &mut self.line,
+                    &mut self.out,
+                    &mut self.line_map,
+                    &self.file,
+                )
+            } else {
+                Vec::new()
+            };
+            substitute_macro(&mdef.body, params, &args)
+        } else {
+            mdef.body.clone()
+        };
+        let resolved = self.pp.expand_text(&expanded, 0);
+        self.out.push_str(&resolved);
     }
 }
 

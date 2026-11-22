@@ -156,272 +156,236 @@ pub enum TokenKind {
 }
 
 pub fn tokenize(pre: &Preprocessed) -> Result<Vec<Token>, String> {
-    let bytes = pre.text.as_bytes();
-    let mut tokens = Vec::new();
-    let mut i = 0usize;
-    let mut line_idx = 0usize;
+    Lexer::new(pre).tokenize()
+}
 
-    let span_at = |line_idx: usize| -> Span {
-        let (file, line) = pre
+struct Lexer<'a> {
+    text: &'a str,
+    bytes: &'a [u8],
+    line_map: &'a [(String, u32)],
+    pos: usize,
+    line_idx: usize,
+}
+
+impl<'a> Lexer<'a> {
+    fn new(pre: &'a Preprocessed) -> Self {
+        Self {
+            text: &pre.text,
+            bytes: pre.text.as_bytes(),
+            line_map: &pre.line_map,
+            pos: 0,
+            line_idx: 0,
+        }
+    }
+
+    fn span(&self) -> Span {
+        let (file, line) = self
             .line_map
-            .get(line_idx)
+            .get(self.line_idx)
             .cloned()
             .unwrap_or_else(|| ("source.sv".into(), 1));
         Span { file, line }
-    };
+    }
 
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'\n' {
-            line_idx += 1;
-            i += 1;
-            continue;
-        }
-        if b.is_ascii_whitespace() {
-            i += 1;
-            continue;
-        }
-
-        // Skip Verilog attributes `(* ... *)`
-        if b == b'(' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
-            i += 2;
-            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b')') {
-                if bytes[i] == b'\n' {
-                    line_idx += 1;
-                }
-                i += 1;
-            }
-            if i + 1 < bytes.len() {
-                i += 2;
-            }
-            continue;
-        }
-
-        let span = span_at(line_idx);
-
-        // Escaped identifier `\foo `
-        if b == b'\\' {
-            i += 1;
-            let start = i;
-            while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
-                i += 1;
-            }
-            let ident = pre.text[start..i].to_string();
-            tokens.push(Token {
-                kind: TokenKind::Ident(ident),
-                span,
-            });
-            continue;
-        }
-
-        // String literal
-        if b == b'"' {
-            i += 1;
-            let mut s = String::new();
-            while i < bytes.len() && bytes[i] != b'"' {
-                if bytes[i] == b'\\' && i + 1 < bytes.len() {
-                    i += 1;
-                    match bytes[i] {
-                        b'n' => s.push('\n'),
-                        b't' => s.push('\t'),
-                        b'\\' => s.push('\\'),
-                        b'"' => s.push('"'),
-                        other => s.push(other as char),
-                    }
-                    i += 1;
-                } else {
-                    if bytes[i] == b'\n' {
-                        line_idx += 1;
-                    }
-                    s.push(bytes[i] as char);
-                    i += 1;
-                }
-            }
-            if i < bytes.len() && bytes[i] == b'"' {
-                i += 1;
-            }
-            tokens.push(Token {
-                kind: TokenKind::StringLiteral(s),
-                span,
-            });
-            continue;
-        }
-
-        // System identifier `$foo`
-        if b == b'$' {
-            let start = i;
-            i += 1;
-            while i < bytes.len()
-                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$')
-            {
-                i += 1;
-            }
-            tokens.push(Token {
-                kind: TokenKind::SysIdent(pre.text[start..i].to_string()),
-                span,
-            });
-            continue;
-        }
-
-        // Unsized based literal or SV unbased unsized literal ('b..., 'h..., '0, '1, 'x, 'z)
-        if b == b'\'' {
-            if let Some(tok) = try_lex_based(&pre.text, &mut i, None, &span)? {
-                tokens.push(Token { kind: tok, span });
+    fn tokenize(mut self) -> Result<Vec<Token>, String> {
+        let mut tokens = Vec::new();
+        while self.pos < self.bytes.len() {
+            let b = self.bytes[self.pos];
+            if b == b'\n' {
+                self.line_idx += 1;
+                self.pos += 1;
                 continue;
             }
-            return Err(format!("{}:{}: unexpected `'`", span.file, span.line));
-        }
-
-        // Numeric literal (integer, real, or sized based literal)
-        if b.is_ascii_digit() {
-            let start = i;
-            while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'_') {
-                i += 1;
-            }
-            // Check for based literal: optional horizontal spaces then `'`
-            let mut look = i;
-            while look < bytes.len() && (bytes[look] == b' ' || bytes[look] == b'\t') {
-                look += 1;
-            }
-            if look < bytes.len() && bytes[look] == b'\'' {
-                let width_str: String = pre.text[start..i].chars().filter(|&c| c != '_').collect();
-                let width: usize = width_str
-                    .parse()
-                    .map_err(|_| format!("{}:{}: invalid literal width", span.file, span.line))?;
-                i = look;
-                if let Some(tok) = try_lex_based(&pre.text, &mut i, Some(width), &span)? {
-                    tokens.push(Token { kind: tok, span });
-                    continue;
-                }
-            }
-            // Check for real literal (decimal point followed by digit, or exponent)
-            if i < bytes.len()
-                && ((bytes[i] == b'.' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit())
-                    || bytes[i] == b'e'
-                    || bytes[i] == b'E')
-            {
-                if bytes[i] == b'.' {
-                    i += 1;
-                    while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'_') {
-                        i += 1;
-                    }
-                }
-                if i < bytes.len() && (bytes[i] == b'e' || bytes[i] == b'E') {
-                    i += 1;
-                    if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
-                        i += 1;
-                    }
-                    while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'_') {
-                        i += 1;
-                    }
-                }
-                let cleaned: String = pre.text[start..i].chars().filter(|&c| c != '_').collect();
-                let val: f64 = cleaned
-                    .parse()
-                    .map_err(|_| format!("{}:{}: invalid real literal", span.file, span.line))?;
-                tokens.push(Token {
-                    kind: TokenKind::RealLiteral(val),
-                    span,
-                });
+            if b.is_ascii_whitespace() {
+                self.pos += 1;
                 continue;
             }
-            let cleaned: String = pre.text[start..i].chars().filter(|&c| c != '_').collect();
-            let val: u64 = cleaned
-                .parse()
-                .map_err(|_| format!("{}:{}: integer literal overflow", span.file, span.line))?;
-            tokens.push(Token {
-                kind: TokenKind::IntLiteral(val),
-                span,
-            });
-            continue;
-        }
-
-        // Identifier or keyword
-        if b.is_ascii_alphabetic() || b == b'_' {
-            let start = i;
-            while i < bytes.len()
-                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$')
-            {
-                i += 1;
+            if b == b'(' && self.pos + 1 < self.bytes.len() && self.bytes[self.pos + 1] == b'*' {
+                self.skip_attribute();
+                continue;
             }
-            let word = &pre.text[start..i];
-            let kind = match word {
-                "module" | "macromodule" => TokenKind::Module,
-                "endmodule" => TokenKind::EndModule,
-                "input" => TokenKind::Input,
-                "output" => TokenKind::Output,
-                "inout" => TokenKind::Inout,
-                "wire" => TokenKind::Wire,
-                "reg" => TokenKind::Reg,
-                "logic" => TokenKind::Logic,
-                "tri" => TokenKind::Tri,
-                "supply0" => TokenKind::Supply0,
-                "supply1" => TokenKind::Supply1,
-                "integer" => TokenKind::Integer,
-                "int" => TokenKind::Int,
-                "signed" => TokenKind::Signed,
-                "unsigned" => TokenKind::Unsigned,
-                "parameter" => TokenKind::Parameter,
-                "localparam" => TokenKind::Localparam,
-                "genvar" => TokenKind::Genvar,
-                "assign" => TokenKind::Assign,
-                "always" => TokenKind::Always,
-                "always_comb" => TokenKind::AlwaysComb,
-                "always_ff" => TokenKind::AlwaysFf,
-                "always_latch" => TokenKind::AlwaysLatch,
-                "initial" => TokenKind::Initial,
-                "final" => TokenKind::Final,
-                "begin" => TokenKind::Begin,
-                "end" => TokenKind::End,
-                "if" => TokenKind::If,
-                "else" => TokenKind::Else,
-                "case" => TokenKind::Case,
-                "casex" => TokenKind::Casex,
-                "casez" => TokenKind::Casez,
-                "endcase" => TokenKind::EndCase,
-                "default" => TokenKind::Default,
-                "for" => TokenKind::For,
-                "while" => TokenKind::While,
-                "repeat" => TokenKind::Repeat,
-                "forever" => TokenKind::Forever,
-                "posedge" => TokenKind::Posedge,
-                "negedge" => TokenKind::Negedge,
-                "or" => TokenKind::Or,
-                "generate" => TokenKind::Generate,
-                "endgenerate" => TokenKind::EndGenerate,
-                "function" => TokenKind::Function,
-                "endfunction" => TokenKind::EndFunction,
-                "task" => TokenKind::Task,
-                "endtask" => TokenKind::EndTask,
-                "force" => TokenKind::Force,
-                "release" => TokenKind::Release,
-                "return" => TokenKind::Return,
-                "typedef" => TokenKind::Typedef,
-                "enum" => TokenKind::Enum,
-                "bit" => TokenKind::Bit,
-                "byte" => TokenKind::Byte,
-                "shortint" => TokenKind::Shortint,
-                "longint" => TokenKind::Longint,
-                "automatic" => TokenKind::Automatic,
-                "and" => TokenKind::GateAnd,
-                "nand" => TokenKind::GateNand,
-                "nor" => TokenKind::GateNor,
-                "xor" => TokenKind::GateXor,
-                "xnor" => TokenKind::GateXnor,
-                "buf" => TokenKind::GateBuf,
-                "not" => TokenKind::GateNot,
-                "bufif0" => TokenKind::GateBufif0,
-                "bufif1" => TokenKind::GateBufif1,
-                "notif0" => TokenKind::GateNotif0,
-                "notif1" => TokenKind::GateNotif1,
-                _ => TokenKind::Ident(word.to_string()),
+
+            let span = self.span();
+            let kind = match b {
+                b'\\' => self.scan_escaped_ident(),
+                b'"' => self.scan_string(),
+                b'$' => self.scan_sys_ident(),
+                b'\'' => {
+                    if let Some(tok) = try_lex_based(self.text, &mut self.pos, None, &span)? {
+                        tok
+                    } else {
+                        return Err(format!("{}:{}: unexpected `'`", span.file, span.line));
+                    }
+                }
+                b if b.is_ascii_digit() => self.scan_number(&span)?,
+                b if b.is_ascii_alphabetic() || b == b'_' => self.scan_ident_or_keyword(),
+                _ => self.scan_operator(&span)?,
             };
             tokens.push(Token { kind, span });
-            continue;
         }
 
-        // Multi-char and single-char operators
-        let rest = &pre.text[i..];
+        tokens.push(Token {
+            kind: TokenKind::Eof,
+            span: self.span(),
+        });
+        Ok(tokens)
+    }
+
+    fn skip_attribute(&mut self) {
+        self.pos += 2;
+        while self.pos + 1 < self.bytes.len()
+            && !(self.bytes[self.pos] == b'*' && self.bytes[self.pos + 1] == b')')
+        {
+            if self.bytes[self.pos] == b'\n' {
+                self.line_idx += 1;
+            }
+            self.pos += 1;
+        }
+        if self.pos + 1 < self.bytes.len() {
+            self.pos += 2;
+        }
+    }
+
+    fn scan_escaped_ident(&mut self) -> TokenKind {
+        self.pos += 1;
+        let start = self.pos;
+        while self.pos < self.bytes.len() && !self.bytes[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
+        }
+        TokenKind::Ident(self.text[start..self.pos].to_string())
+    }
+
+    fn scan_string(&mut self) -> TokenKind {
+        self.pos += 1;
+        let mut s = String::new();
+        while self.pos < self.bytes.len() && self.bytes[self.pos] != b'"' {
+            if self.bytes[self.pos] == b'\\' && self.pos + 1 < self.bytes.len() {
+                self.pos += 1;
+                match self.bytes[self.pos] {
+                    b'n' => s.push('\n'),
+                    b't' => s.push('\t'),
+                    b'\\' => s.push('\\'),
+                    b'"' => s.push('"'),
+                    other => s.push(other as char),
+                }
+                self.pos += 1;
+            } else {
+                if self.bytes[self.pos] == b'\n' {
+                    self.line_idx += 1;
+                }
+                s.push(self.bytes[self.pos] as char);
+                self.pos += 1;
+            }
+        }
+        if self.pos < self.bytes.len() && self.bytes[self.pos] == b'"' {
+            self.pos += 1;
+        }
+        TokenKind::StringLiteral(s)
+    }
+
+    fn scan_sys_ident(&mut self) -> TokenKind {
+        let start = self.pos;
+        self.pos += 1;
+        while self.pos < self.bytes.len()
+            && (self.bytes[self.pos].is_ascii_alphanumeric()
+                || self.bytes[self.pos] == b'_'
+                || self.bytes[self.pos] == b'$')
+        {
+            self.pos += 1;
+        }
+        TokenKind::SysIdent(self.text[start..self.pos].to_string())
+    }
+
+    fn scan_number(&mut self, span: &Span) -> Result<TokenKind, String> {
+        let start = self.pos;
+        while self.pos < self.bytes.len()
+            && (self.bytes[self.pos].is_ascii_digit() || self.bytes[self.pos] == b'_')
+        {
+            self.pos += 1;
+        }
+        // Check for based literal: optional horizontal spaces then `'`
+        let mut look = self.pos;
+        while look < self.bytes.len() && (self.bytes[look] == b' ' || self.bytes[look] == b'\t') {
+            look += 1;
+        }
+        if look < self.bytes.len() && self.bytes[look] == b'\'' {
+            let width_str: String = self.text[start..self.pos]
+                .chars()
+                .filter(|&c| c != '_')
+                .collect();
+            let width: usize = width_str
+                .parse()
+                .map_err(|_| format!("{}:{}: invalid literal width", span.file, span.line))?;
+            self.pos = look;
+            if let Some(tok) = try_lex_based(self.text, &mut self.pos, Some(width), span)? {
+                return Ok(tok);
+            }
+        }
+        // Check for real literal (decimal point followed by digit, or exponent)
+        if self.pos < self.bytes.len()
+            && ((self.bytes[self.pos] == b'.'
+                && self.pos + 1 < self.bytes.len()
+                && self.bytes[self.pos + 1].is_ascii_digit())
+                || self.bytes[self.pos] == b'e'
+                || self.bytes[self.pos] == b'E')
+        {
+            if self.bytes[self.pos] == b'.' {
+                self.pos += 1;
+                while self.pos < self.bytes.len()
+                    && (self.bytes[self.pos].is_ascii_digit() || self.bytes[self.pos] == b'_')
+                {
+                    self.pos += 1;
+                }
+            }
+            if self.pos < self.bytes.len()
+                && (self.bytes[self.pos] == b'e' || self.bytes[self.pos] == b'E')
+            {
+                self.pos += 1;
+                if self.pos < self.bytes.len()
+                    && (self.bytes[self.pos] == b'+' || self.bytes[self.pos] == b'-')
+                {
+                    self.pos += 1;
+                }
+                while self.pos < self.bytes.len()
+                    && (self.bytes[self.pos].is_ascii_digit() || self.bytes[self.pos] == b'_')
+                {
+                    self.pos += 1;
+                }
+            }
+            let cleaned: String = self.text[start..self.pos]
+                .chars()
+                .filter(|&c| c != '_')
+                .collect();
+            let val: f64 = cleaned
+                .parse()
+                .map_err(|_| format!("{}:{}: invalid real literal", span.file, span.line))?;
+            return Ok(TokenKind::RealLiteral(val));
+        }
+        let cleaned: String = self.text[start..self.pos]
+            .chars()
+            .filter(|&c| c != '_')
+            .collect();
+        let val: u64 = cleaned
+            .parse()
+            .map_err(|_| format!("{}:{}: integer literal overflow", span.file, span.line))?;
+        Ok(TokenKind::IntLiteral(val))
+    }
+
+    fn scan_ident_or_keyword(&mut self) -> TokenKind {
+        let start = self.pos;
+        while self.pos < self.bytes.len()
+            && (self.bytes[self.pos].is_ascii_alphanumeric()
+                || self.bytes[self.pos] == b'_'
+                || self.bytes[self.pos] == b'$')
+        {
+            self.pos += 1;
+        }
+        keyword_or_ident(&self.text[start..self.pos])
+    }
+
+    fn scan_operator(&mut self, span: &Span) -> Result<TokenKind, String> {
+        let rest = &self.text[self.pos..];
+        let b = self.bytes[self.pos];
         let (kind, len) = if rest.starts_with("===") {
             (TokenKind::EqEqEq, 3)
         } else if rest.starts_with("!==") {
@@ -506,15 +470,83 @@ pub fn tokenize(pre: &Preprocessed) -> Result<Vec<Token>, String> {
                 }
             }
         };
-        i += len;
-        tokens.push(Token { kind, span });
+        self.pos += len;
+        Ok(kind)
     }
+}
 
-    tokens.push(Token {
-        kind: TokenKind::Eof,
-        span: span_at(line_idx),
-    });
-    Ok(tokens)
+fn keyword_or_ident(word: &str) -> TokenKind {
+    match word {
+        "module" | "macromodule" => TokenKind::Module,
+        "endmodule" => TokenKind::EndModule,
+        "input" => TokenKind::Input,
+        "output" => TokenKind::Output,
+        "inout" => TokenKind::Inout,
+        "wire" => TokenKind::Wire,
+        "reg" => TokenKind::Reg,
+        "logic" => TokenKind::Logic,
+        "tri" => TokenKind::Tri,
+        "supply0" => TokenKind::Supply0,
+        "supply1" => TokenKind::Supply1,
+        "integer" => TokenKind::Integer,
+        "int" => TokenKind::Int,
+        "signed" => TokenKind::Signed,
+        "unsigned" => TokenKind::Unsigned,
+        "parameter" => TokenKind::Parameter,
+        "localparam" => TokenKind::Localparam,
+        "genvar" => TokenKind::Genvar,
+        "assign" => TokenKind::Assign,
+        "always" => TokenKind::Always,
+        "always_comb" => TokenKind::AlwaysComb,
+        "always_ff" => TokenKind::AlwaysFf,
+        "always_latch" => TokenKind::AlwaysLatch,
+        "initial" => TokenKind::Initial,
+        "final" => TokenKind::Final,
+        "begin" => TokenKind::Begin,
+        "end" => TokenKind::End,
+        "if" => TokenKind::If,
+        "else" => TokenKind::Else,
+        "case" => TokenKind::Case,
+        "casex" => TokenKind::Casex,
+        "casez" => TokenKind::Casez,
+        "endcase" => TokenKind::EndCase,
+        "default" => TokenKind::Default,
+        "for" => TokenKind::For,
+        "while" => TokenKind::While,
+        "repeat" => TokenKind::Repeat,
+        "forever" => TokenKind::Forever,
+        "posedge" => TokenKind::Posedge,
+        "negedge" => TokenKind::Negedge,
+        "or" => TokenKind::Or,
+        "generate" => TokenKind::Generate,
+        "endgenerate" => TokenKind::EndGenerate,
+        "function" => TokenKind::Function,
+        "endfunction" => TokenKind::EndFunction,
+        "task" => TokenKind::Task,
+        "endtask" => TokenKind::EndTask,
+        "force" => TokenKind::Force,
+        "release" => TokenKind::Release,
+        "return" => TokenKind::Return,
+        "typedef" => TokenKind::Typedef,
+        "enum" => TokenKind::Enum,
+        "bit" => TokenKind::Bit,
+        "byte" => TokenKind::Byte,
+        "shortint" => TokenKind::Shortint,
+        "longint" => TokenKind::Longint,
+        "automatic" => TokenKind::Automatic,
+        "and" => TokenKind::GateAnd,
+        "nand" => TokenKind::GateNand,
+        "nor" => TokenKind::GateNor,
+        "xor" => TokenKind::GateXor,
+        "xnor" => TokenKind::GateXnor,
+        "buf" => TokenKind::GateBuf,
+        "not" => TokenKind::GateNot,
+        "bufif0" => TokenKind::GateBufif0,
+        "bufif1" => TokenKind::GateBufif1,
+        "notif0" => TokenKind::GateNotif0,
+        "notif1" => TokenKind::GateNotif1,
+        _ => TokenKind::Ident(word.to_string()),
+    }
 }
 
 fn try_lex_based(
