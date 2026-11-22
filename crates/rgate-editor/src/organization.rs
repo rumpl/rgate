@@ -1,4 +1,5 @@
-use crate::{EditError, Editor, endpoint_positions, update_wire_endpoints};
+use crate::wiring::{endpoint_positions, update_wire_endpoints};
+use crate::{EditError, Editor};
 use rgate_core::{Circuit, Direction, GateId, GateKind, NetId, Point};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
