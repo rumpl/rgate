@@ -2,18 +2,14 @@ pub mod canvas_controller;
 mod canvas_input;
 mod commands;
 pub mod console;
-pub mod dialog_host;
-mod dialogs;
 mod io;
-pub mod property_dialog;
 pub mod sim_session;
 mod simulation;
 
+pub use crate::dialogs::{Dialog, DialogHost};
 pub use crate::view::layout::{ContextMenu, OpenMenu, WorkspaceTab};
 pub use canvas_controller::{CanvasController, Drag};
 pub use console::ConsoleLog;
-pub use dialog_host::{Dialog, DialogHost, NetDialog, OpenDialog};
-pub use property_dialog::PropertyDialog;
 pub use sim_session::SimSession;
 
 use crate::{

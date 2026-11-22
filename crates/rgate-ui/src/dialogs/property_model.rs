@@ -1,8 +1,63 @@
 use anyhow::{Context as _, Result};
 use gpui::{Context, Entity, Window};
 use gpui_component::input::InputState;
-use rgate_core::{ComponentConfig, Gate, GateId, GateKind, Module, Point, Signal};
+use rgate_core::{ComponentConfig, Gate, GateId, GateKind, Module, Net, NetId, Point, Signal};
 use rgate_editor::Editor;
+
+pub struct NetDialog {
+    pub net: NetId,
+    pub name: Entity<InputState>,
+    pub width: Entity<InputState>,
+    pub show_name: bool,
+    pub error: Option<String>,
+}
+
+impl NetDialog {
+    pub fn from_net<T: 'static>(net: &Net, window: &mut Window, cx: &mut Context<T>) -> Self {
+        Self {
+            net: net.id,
+            name: crate::input::text_field(&net.name, window, cx),
+            width: crate::input::text_field(net.width.to_string(), window, cx),
+            show_name: net.show_name,
+            error: None,
+        }
+    }
+
+    pub fn apply_to_editor<T: 'static>(&self, editor: &mut Editor, cx: &Context<T>) -> Result<()> {
+        let id = self.net;
+        let name = self.name.read(cx).value().trim().to_owned();
+        if name.is_empty() {
+            anyhow::bail!("Net name must not be empty.");
+        }
+        let width: u16 = self
+            .width
+            .read(cx)
+            .value()
+            .parse()
+            .context("Width must be 1–4096.")?;
+        if !(1..=4096).contains(&width) {
+            anyhow::bail!("Width must be 1–4096.");
+        }
+        if editor.module().gates.iter().any(|gate| {
+            gate.pins
+                .iter()
+                .any(|pin| pin.net == Some(id) && gate.pin_width(&pin.name) != width)
+        }) {
+            anyhow::bail!(
+                "Width conflicts with connected pins. Disconnect or resize the components first."
+            );
+        }
+        let show = self.show_name;
+        editor.edit_module(|module| {
+            if let Some(net) = module.nets.iter_mut().find(|net| net.id == id) {
+                net.name = name;
+                net.width = width;
+                net.show_name = show;
+            }
+        })?;
+        Ok(())
+    }
+}
 
 pub struct PropertyDialog {
     pub gate: GateId,

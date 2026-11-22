@@ -27,7 +27,7 @@ impl GateApp {
         self.load_document(circuit, path);
     }
 
-    pub(super) fn load_document(&mut self, circuit: Circuit, path: Option<PathBuf>) {
+    pub(crate) fn load_document(&mut self, circuit: Circuit, path: Option<PathBuf>) {
         self.flush_workspace();
         match Editor::new(circuit) {
             Ok(editor) => {
