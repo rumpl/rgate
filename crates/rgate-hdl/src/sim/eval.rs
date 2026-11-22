@@ -20,14 +20,14 @@ impl VerilogSim {
                 }
                 bv
             }
-            ElabExpr::Signal(sig) => self.values[sig.0].clone(),
+            ElabExpr::Signal(sig) => self.store.value(*sig).clone(),
             ElabExpr::MemRead { mem, index } => {
                 let idx = self.eval_expr(index, None);
                 let m = &self.design.memories[mem.0];
                 if let Some(addr) = idx.to_i64_signed()
                     && let Some(slot) = m.elem_index(addr)
                 {
-                    self.memories[mem.0][slot].clone()
+                    self.store.memories[mem.0][slot].clone()
                 } else {
                     BitVec::filled(m.elem_width, Logic::Unknown)
                 }
@@ -230,7 +230,7 @@ impl VerilogSim {
                         break;
                     }
                 }
-                ret.unwrap_or_else(|| self.values[func.return_sig.0].clone())
+                ret.unwrap_or_else(|| self.store.value(func.return_sig).clone())
             }
         }
     }

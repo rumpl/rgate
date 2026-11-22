@@ -9,10 +9,10 @@ impl VerilogSim {
             ElabLValue::Signal(sig) => {
                 let info = &self.design.signals[sig.0];
                 let v = value.resized(info.width, info.signed);
-                self.drivers[sig.0].insert(driver_id, v);
-                let resolved = self.resolve_drivers(*sig);
-                self.unforced[sig.0] = resolved.clone();
-                if self.forced[sig.0].is_none() {
+                self.store.drivers[sig.0].insert(driver_id, v);
+                let resolved = self.store.resolve_drivers(&self.design, *sig);
+                self.store.unforced[sig.0] = resolved.clone();
+                if self.store.forced[sig.0].is_none() {
                     self.commit_visible_value(*sig, resolved);
                 }
             }
@@ -32,40 +32,26 @@ impl VerilogSim {
         }
     }
 
-    pub(super) fn resolve_drivers(&self, sig: SigId) -> BitVec {
-        let info = &self.design.signals[sig.0];
-        let mut acc = BitVec::filled(info.width, Logic::HighZ);
-        for driven in self.drivers[sig.0].values() {
-            acc = acc.resolve(driven);
-        }
-        acc.signed = info.signed;
-        acc
-    }
-
     pub(super) fn write_signal_direct(&mut self, sig: SigId, value: BitVec) {
         let info = &self.design.signals[sig.0];
         let v = value.resized(info.width, info.signed);
-        self.unforced[sig.0] = v.clone();
-        if self.forced[sig.0].is_none() {
+        self.store.unforced[sig.0] = v.clone();
+        if self.store.forced[sig.0].is_none() {
             self.commit_visible_value(sig, v);
         }
     }
 
     pub(super) fn commit_visible_value(&mut self, sig: SigId, new_val: BitVec) {
-        if self.values[sig.0] == new_val {
+        if !self.store.set_visible(self.now, sig, new_val) {
             return;
         }
-        self.values[sig.0] = new_val.clone();
-        if self.watched_sigs[sig.0] {
-            self.changed_log.push((self.now, sig, new_val));
-        }
         // Wake dependent continuous assigns
-        let assigns = self.sig_to_assigns[sig.0].clone();
+        let assigns = self.store.fanout.sig_to_assigns[sig.0].clone();
         for aidx in assigns {
-            self.enqueue_assign(aidx);
+            self.scheduler.enqueue_assign(aidx);
         }
         // Wake dependent processes (check edge vs level sensitivity)
-        let procs = self.sig_to_procs[sig.0].clone();
+        let procs = self.store.fanout.sig_to_procs[sig.0].clone();
         for pidx in procs {
             let mut triggered = false;
             let sens_len = self.design.processes[pidx].sensitivity.len();
@@ -73,8 +59,8 @@ impl VerilogSim {
                 match self.design.processes[pidx].sensitivity[eidx].clone() {
                     ElabEvent::Posedge(e) => {
                         let new_bit = self.eval_expr(&e, None).bit(0);
-                        let old_bit = self.edge_prev[pidx][eidx];
-                        self.edge_prev[pidx][eidx] = new_bit;
+                        let old_bit = self.store.edge_prev[pidx][eidx];
+                        self.store.edge_prev[pidx][eidx] = new_bit;
                         if (old_bit == Logic::Low && new_bit != Logic::Low)
                             || (old_bit != Logic::High && new_bit == Logic::High)
                         {
@@ -83,8 +69,8 @@ impl VerilogSim {
                     }
                     ElabEvent::Negedge(e) => {
                         let new_bit = self.eval_expr(&e, None).bit(0);
-                        let old_bit = self.edge_prev[pidx][eidx];
-                        self.edge_prev[pidx][eidx] = new_bit;
+                        let old_bit = self.store.edge_prev[pidx][eidx];
+                        self.store.edge_prev[pidx][eidx] = new_bit;
                         if (old_bit == Logic::High && new_bit != Logic::High)
                             || (old_bit != Logic::Low && new_bit == Logic::Low)
                         {
@@ -112,20 +98,15 @@ impl VerilogSim {
             ElabLValue::MemElem { mem, index } => {
                 let idx_val = self.eval_expr(index, None);
                 if let Some(addr) = idx_val.to_i64_signed()
-                    && let Some(slot) = self.design.memories[mem.0].elem_index(addr)
+                    && self.store.write_memory(&self.design, *mem, addr, value)
                 {
-                    let m = &self.design.memories[mem.0];
-                    let v = value.resized(m.elem_width, m.elem_signed);
-                    if self.memories[mem.0][slot] != v {
-                        self.memories[mem.0][slot] = v;
-                        let assigns = self.mem_to_assigns[mem.0].clone();
-                        for aidx in assigns {
-                            self.enqueue_assign(aidx);
-                        }
-                        let procs = self.mem_to_procs[mem.0].clone();
-                        for pidx in procs {
-                            self.enqueue_proc(pidx);
-                        }
+                    let assigns = self.store.fanout.mem_to_assigns[mem.0].clone();
+                    for aidx in assigns {
+                        self.scheduler.enqueue_assign(aidx);
+                    }
+                    let procs = self.store.fanout.mem_to_procs[mem.0].clone();
+                    for pidx in procs {
+                        self.enqueue_proc(pidx);
                     }
                 }
             }
@@ -134,7 +115,7 @@ impl VerilogSim {
                 if let Some(bit_idx) = idx_val.to_i64_signed()
                     && let Some(off) = self.design.signals[sig.0].bit_offset(bit_idx)
                 {
-                    let mut cur = self.unforced[sig.0].clone();
+                    let mut cur = self.store.unforced[sig.0].clone();
                     cur.set_bit(off, value.bit(0));
                     self.write_signal_direct(*sig, cur);
                 }
@@ -144,7 +125,7 @@ impl VerilogSim {
                 let lo = (*msb).min(*lsb);
                 let w = ((*msb - *lsb).unsigned_abs() as usize + 1).max(1);
                 if let Some(off) = info.bit_offset(lo) {
-                    let mut cur = self.unforced[sig.0].clone();
+                    let mut cur = self.store.unforced[sig.0].clone();
                     cur.set_slice(off, &value.resized(w, false));
                     self.write_signal_direct(*sig, cur);
                 }
@@ -163,7 +144,7 @@ impl VerilogSim {
                         b - (*width as i64) + 1
                     };
                     if let Some(off) = self.design.signals[sig.0].bit_offset(lo) {
-                        let mut cur = self.unforced[sig.0].clone();
+                        let mut cur = self.store.unforced[sig.0].clone();
                         cur.set_slice(off, &value.resized(*width, false));
                         self.write_signal_direct(*sig, cur);
                     }

@@ -1,4 +1,6 @@
-use super::{ExecFrame, SimEventKind, VerilogSim};
+use super::process::ExecFrame;
+use super::scheduler::SimEventKind;
+use super::VerilogSim;
 use crate::ast::CaseKind;
 use crate::elaborate::{ElabExpr, ElabLValue, ElabStmt, ProcessKind};
 
@@ -10,9 +12,9 @@ enum StepOutcome {
 
 impl VerilogSim {
     pub(super) fn run_process(&mut self, pidx: usize) -> Result<(), String> {
-        if self.proc_frames[pidx].is_empty() {
+        if self.procs.frames[pidx].is_empty() {
             let body = self.design.processes[pidx].body.clone();
-            self.proc_frames[pidx].push(ExecFrame::Seq {
+            self.procs.frames[pidx].push(ExecFrame::Seq {
                 stmts: vec![body],
                 idx: 0,
             });
@@ -24,14 +26,14 @@ impl VerilogSim {
             if steps > 1_000_000 {
                 return Err("process execution exceeded step limit (possible infinite loop)".into());
             }
-            let Some(frame) = self.proc_frames[pidx].pop() else {
+            let Some(frame) = self.procs.frames[pidx].pop() else {
                 // Process finished one full execution
                 if self.design.processes[pidx].kind == ProcessKind::Always
                     && self.design.processes[pidx].sensitivity.is_empty()
                 {
                     // Loop `always #5 clk = ~clk;`
                     let body = self.design.processes[pidx].body.clone();
-                    self.proc_frames[pidx].push(ExecFrame::Seq {
+                    self.procs.frames[pidx].push(ExecFrame::Seq {
                         stmts: vec![body],
                         idx: 0,
                     });
@@ -47,7 +49,7 @@ impl VerilogSim {
                     }
                     let stmt = stmts[idx].clone();
                     if idx + 1 < stmts.len() {
-                        self.proc_frames[pidx].push(ExecFrame::Seq {
+                        self.procs.frames[pidx].push(ExecFrame::Seq {
                             stmts,
                             idx: idx + 1,
                         });
@@ -56,25 +58,25 @@ impl VerilogSim {
                         StepOutcome::Done => {}
                         StepOutcome::Suspended => return Ok(()),
                         StepOutcome::Return => {
-                            self.proc_frames[pidx].clear();
+                            self.procs.frames[pidx].clear();
                             return Ok(());
                         }
                     }
                 }
                 ExecFrame::Forever(body) => {
-                    self.proc_frames[pidx].push(ExecFrame::Forever(body.clone()));
-                    self.proc_frames[pidx].push(ExecFrame::Seq {
+                    self.procs.frames[pidx].push(ExecFrame::Forever(body.clone()));
+                    self.procs.frames[pidx].push(ExecFrame::Seq {
                         stmts: vec![body],
                         idx: 0,
                     });
                 }
                 ExecFrame::Repeat { remaining, body } => {
                     if remaining > 0 {
-                        self.proc_frames[pidx].push(ExecFrame::Repeat {
+                        self.procs.frames[pidx].push(ExecFrame::Repeat {
                             remaining: remaining - 1,
                             body: body.clone(),
                         });
-                        self.proc_frames[pidx].push(ExecFrame::Seq {
+                        self.procs.frames[pidx].push(ExecFrame::Seq {
                             stmts: vec![body],
                             idx: 0,
                         });
@@ -82,11 +84,11 @@ impl VerilogSim {
                 }
                 ExecFrame::While { cond, body } => {
                     if self.eval_expr(&cond, None).is_true() {
-                        self.proc_frames[pidx].push(ExecFrame::While {
+                        self.procs.frames[pidx].push(ExecFrame::While {
                             cond,
                             body: body.clone(),
                         });
-                        self.proc_frames[pidx].push(ExecFrame::Seq {
+                        self.procs.frames[pidx].push(ExecFrame::Seq {
                             stmts: vec![body],
                             idx: 0,
                         });
@@ -107,13 +109,13 @@ impl VerilogSim {
                         .as_ref()
                         .is_none_or(|c| self.eval_expr(c, None).is_true());
                     if ok {
-                        self.proc_frames[pidx].push(ExecFrame::For {
+                        self.procs.frames[pidx].push(ExecFrame::For {
                             cond,
                             step,
                             body: body.clone(),
                             run_step: true,
                         });
-                        self.proc_frames[pidx].push(ExecFrame::Seq {
+                        self.procs.frames[pidx].push(ExecFrame::Seq {
                             stmts: vec![body],
                             idx: 0,
                         });
@@ -128,7 +130,7 @@ impl VerilogSim {
             ElabStmt::Empty => Ok(StepOutcome::Done),
             ElabStmt::Block(stmts) => {
                 if !stmts.is_empty() {
-                    self.proc_frames[pidx].push(ExecFrame::Seq {
+                    self.procs.frames[pidx].push(ExecFrame::Seq {
                         stmts: stmts.clone(),
                         idx: 0,
                     });
@@ -147,25 +149,26 @@ impl VerilogSim {
                     if let Some(d) = delay_ticks
                         && *d > 0
                     {
-                        self.proc_sleeping[pidx] = true;
+                        self.procs.sleep(pidx);
                         let assign_now = ElabStmt::Assign {
                             blocking: true,
                             lhs: lhs.clone(),
                             delay_ticks: None,
                             rhs: ElabExpr::Const(val),
                         };
-                        self.proc_frames[pidx].push(ExecFrame::Seq {
+                        self.procs.frames[pidx].push(ExecFrame::Seq {
                             stmts: vec![assign_now],
                             idx: 0,
                         });
-                        self.schedule(self.now + d, SimEventKind::ResumeProc(pidx));
+                        self.scheduler
+                            .schedule(self.now + d, SimEventKind::ResumeProc(pidx));
                         return Ok(StepOutcome::Suspended);
                     }
                     self.write_lvalue(lhs, &val);
                 } else if let Some(d) = delay_ticks
                     && *d > 0
                 {
-                    self.schedule(
+                    self.scheduler.schedule(
                         self.now + d,
                         SimEventKind::DelayedNba {
                             lhs: lhs.clone(),
@@ -173,7 +176,7 @@ impl VerilogSim {
                         },
                     );
                 } else {
-                    self.pending_nba.push((lhs.clone(), val));
+                    self.scheduler.push_nba(lhs.clone(), val);
                 }
                 Ok(StepOutcome::Done)
             }
@@ -225,7 +228,7 @@ impl VerilogSim {
                 if let Some(init_stmt) = init {
                     let _ = self.exec_stmt(pidx, init_stmt)?;
                 }
-                self.proc_frames[pidx].push(ExecFrame::For {
+                self.procs.frames[pidx].push(ExecFrame::For {
                     cond: cond.clone(),
                     step: step.as_deref().cloned(),
                     body: (**body).clone(),
@@ -234,7 +237,7 @@ impl VerilogSim {
                 Ok(StepOutcome::Done)
             }
             ElabStmt::While { cond, body } => {
-                self.proc_frames[pidx].push(ExecFrame::While {
+                self.procs.frames[pidx].push(ExecFrame::While {
                     cond: cond.clone(),
                     body: (**body).clone(),
                 });
@@ -243,7 +246,7 @@ impl VerilogSim {
             ElabStmt::Repeat { count, body } => {
                 let n = self.eval_expr(count, None).to_u64().unwrap_or(0);
                 if n > 0 {
-                    self.proc_frames[pidx].push(ExecFrame::Repeat {
+                    self.procs.frames[pidx].push(ExecFrame::Repeat {
                         remaining: n,
                         body: (**body).clone(),
                     });
@@ -251,35 +254,33 @@ impl VerilogSim {
                 Ok(StepOutcome::Done)
             }
             ElabStmt::Forever(body) => {
-                self.proc_frames[pidx].push(ExecFrame::Forever((**body).clone()));
+                self.procs.frames[pidx].push(ExecFrame::Forever((**body).clone()));
                 Ok(StepOutcome::Done)
             }
             ElabStmt::DelayControl { delay_ticks, body } => {
                 if *delay_ticks == 0 {
                     self.exec_stmt(pidx, body)
                 } else {
-                    self.proc_sleeping[pidx] = true;
-                    self.proc_frames[pidx].push(ExecFrame::Seq {
+                    self.procs.sleep(pidx);
+                    self.procs.frames[pidx].push(ExecFrame::Seq {
                         stmts: vec![(**body).clone()],
                         idx: 0,
                     });
-                    self.schedule(self.now + delay_ticks, SimEventKind::ResumeProc(pidx));
+                    self.scheduler
+                        .schedule(self.now + delay_ticks, SimEventKind::ResumeProc(pidx));
                     Ok(StepOutcome::Suspended)
                 }
             }
-            ElabStmt::EventControl { body, .. } => {
-                // Nested event control: run body immediately if reached
-                self.exec_stmt(pidx, body)
-            }
+            ElabStmt::EventControl { body, .. } => self.exec_stmt(pidx, body),
             ElabStmt::Force { lhs, rhs } => {
                 let ctx_w = self.lvalue_width(lhs);
                 let val = self.eval_expr(rhs, Some(ctx_w));
                 if let ElabLValue::Signal(sig) = lhs {
                     let info = &self.design.signals[sig.0];
                     let v = val.resized(info.width, info.signed);
-                    self.forced[sig.0] = Some(v.clone());
-                    if !info.is_net && self.drivers[sig.0].is_empty() {
-                        self.unforced[sig.0] = v.clone();
+                    self.store.forced[sig.0] = Some(v.clone());
+                    if !info.is_net && self.store.drivers[sig.0].is_empty() {
+                        self.store.unforced[sig.0] = v.clone();
                     }
                     self.commit_visible_value(*sig, v);
                 }
@@ -287,17 +288,17 @@ impl VerilogSim {
             }
             ElabStmt::Release { lhs } => {
                 if let ElabLValue::Signal(sig) = lhs {
-                    let prev_forced = self.forced[sig.0].take();
-                    let restored = if !self.drivers[sig.0].is_empty() {
-                        self.resolve_drivers(*sig)
+                    let prev_forced = self.store.forced[sig.0].take();
+                    let restored = if !self.store.drivers[sig.0].is_empty() {
+                        self.store.resolve_drivers(&self.design, *sig)
                     } else if self.design.signals[sig.0].is_net {
-                        self.unforced[sig.0].clone()
+                        self.store.unforced[sig.0].clone()
                     } else {
                         // IEEE 1364-2005 9.3.2: releasing a reg retains its forced value
                         // until the next procedural assignment.
-                        prev_forced.unwrap_or_else(|| self.unforced[sig.0].clone())
+                        prev_forced.unwrap_or_else(|| self.store.unforced[sig.0].clone())
                     };
-                    self.unforced[sig.0] = restored.clone();
+                    self.store.unforced[sig.0] = restored.clone();
                     self.commit_visible_value(*sig, restored);
                 }
                 Ok(StepOutcome::Done)
@@ -310,7 +311,7 @@ impl VerilogSim {
                     self.write_signal_direct(*psig, val);
                 }
                 if !task.body.is_empty() {
-                    self.proc_frames[pidx].push(ExecFrame::Seq {
+                    self.procs.frames[pidx].push(ExecFrame::Seq {
                         stmts: task.body,
                         idx: 0,
                     });
@@ -319,7 +320,7 @@ impl VerilogSim {
             }
             ElabStmt::SysTaskCall { name, .. } => {
                 if name == "$finish" || name == "$stop" {
-                    self.finished = true;
+                    self.procs.finished = true;
                 }
                 Ok(StepOutcome::Done)
             }
