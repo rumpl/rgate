@@ -4,7 +4,7 @@
 
 ## Adder
 
-![Adder as rendered in RGate](../images/components/add.png)
+![Adder as rendered in RGate](../images/2026-11-22/components/add.png)
 
 **Inputs:** `A`, `B` data buses and scalar `CI` carry-in. **Outputs:** `S` sum
 and scalar `CO` carry-out. Data widths match the configured width (default 8).
@@ -19,7 +19,7 @@ depends on your interpretation. CO reports the carry out.
 
 ## Multiplier
 
-![Multiplier as rendered in RGate](../images/components/multiply.png)
+![Multiplier as rendered in RGate](../images/2026-11-22/components/multiply.png)
 
 **Inputs:** A and B; **output:** P. Overall **Bit width** controls P. **Operand
 A width** and **Operand B width** can be configured separately; defaults match
@@ -31,7 +31,7 @@ operands produce unknown output.
 
 ## Divider
 
-![Divider as rendered in RGate](../images/components/divide.png)
+![Divider as rendered in RGate](../images/2026-11-22/components/divide.png)
 
 **Inputs:** A dividend, B divisor. **Outputs:** Q quotient and R remainder. A/B
 widths can be configured independently; Q/R use the overall width.
@@ -43,11 +43,11 @@ Unsigned integer division: A=23, B=5 → Q=4, R=3. Narrow outputs truncate.
 
 | Component              | Symbol                                                                                          |
 | ---------------------- | ----------------------------------------------------------------------------------------------- |
-| Shift left             | ![Shift left as rendered in RGate](../images/components/shift_left.png)                         |
-| Shift right            | ![Shift right as rendered in RGate](../images/components/shift_right.png)                       |
-| Arithmetic shift right | ![Arithmetic shift right as rendered in RGate](../images/components/arithmetic_shift_right.png) |
-| Rotate left            | ![Rotate left as rendered in RGate](../images/components/rotate_left.png)                       |
-| Rotate right           | ![Rotate right as rendered in RGate](../images/components/rotate_right.png)                     |
+| Shift left             | ![Shift left as rendered in RGate](../images/2026-11-22/components/shift_left.png)                         |
+| Shift right            | ![Shift right as rendered in RGate](../images/2026-11-22/components/shift_right.png)                       |
+| Arithmetic shift right | ![Arithmetic shift right as rendered in RGate](../images/2026-11-22/components/arithmetic_shift_right.png) |
+| Rotate left            | ![Rotate left as rendered in RGate](../images/2026-11-22/components/rotate_left.png)                       |
+| Rotate right           | ![Rotate right as rendered in RGate](../images/2026-11-22/components/rotate_right.png)                     |
 
 **Inputs:** I data and S amount; **output:** Z data. I/Z have matching widths.
 Newly created S pins use ceiling(log2(data width)), with at least one bit.

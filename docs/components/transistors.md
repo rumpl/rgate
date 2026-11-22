@@ -4,8 +4,8 @@
 
 | Component | Symbol                                                      |
 | --------- | ----------------------------------------------------------- |
-| NMOS      | ![NMOS as rendered in RGate](../images/components/nmos.png) |
-| PMOS      | ![PMOS as rendered in RGate](../images/components/pmos.png) |
+| NMOS      | ![NMOS as rendered in RGate](../images/2026-11-22/components/nmos.png) |
+| PMOS      | ![PMOS as rendered in RGate](../images/2026-11-22/components/pmos.png) |
 
 Both are **digital pass devices**: the gate signal controls whether source data
 reaches the output.

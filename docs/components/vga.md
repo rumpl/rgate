@@ -2,7 +2,9 @@
 
 [Component index](README.md) · [Tiny VGA example](../examples/tiny-vga.md)
 
-![VGA sink displaying the circuit-generated test pattern](../images/tiny-vga.png)
+![VGA sink displaying the circuit-generated test pattern](../images/2026-11-22/tiny-vga.png)
+
+![VGA display component](../images/2026-11-22/components/vga.png)
 
 Connect a raster circuit to this display to watch its RGB444 pixels and
 synchronization signals.

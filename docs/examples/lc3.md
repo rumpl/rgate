@@ -6,7 +6,7 @@
 Download [lc3.rgate](../../examples/lc3.rgate) and open it with **File →
 Open…**.
 
-![LC-3 root schematic and reusable modules](../images/lc3.png)
+![LC-3 root schematic and reusable modules](../images/2026-11-22/lc3.png)
 
 For a second implementation with HDL base modules, see
 [LC-3 with HDL modules](lc3-hdl.md).
@@ -41,7 +41,7 @@ data path. Junction dots identify connected wires.
 7. Double-click `main_memory` and inspect **decimal address 12320**, which is
    hex **x3020**. Its value is **0x000F (15)**.
 
-![Terminal showing HI after the program executes](../images/terminal.png)
+![Terminal showing HI after the program executes](../images/2026-11-22/terminal.png)
 
 ## Program
 

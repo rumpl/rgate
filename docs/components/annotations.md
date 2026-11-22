@@ -6,7 +6,7 @@ Use comments and frames to explain and organize your circuit.
 
 ## Comment
 
-![Comment as rendered in RGate](../images/components/comment.png)
+![Comment as rendered in RGate](../images/2026-11-22/components/comment.png)
 
 Place Comment from Components or press T. Properties has **Text**; the current
 single-line field represents newlines as `\n`.
@@ -42,7 +42,7 @@ links to make the annotation easy to follow.
 
 ## Frame
 
-![Frame as rendered in RGate](../images/components/frame.png)
+![Frame as rendered in RGate](../images/2026-11-22/components/frame.png)
 
 Place Frame to draw a background rectangle behind circuit content. Set title in
 Properties, or leave the text empty to display its instance name. Set frame

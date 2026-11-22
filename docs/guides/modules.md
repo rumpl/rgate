@@ -31,7 +31,7 @@ and observed internal signals.
 
 ## Place an instance
 
-![A module instance with bus ports](../images/components/module.png)
+![A module instance with bus ports](../images/2026-11-22/components/module.png)
 
 1. Switch to the parent schematic.
 2. Find the definition under **Module instances** in Components and drag it onto
@@ -67,7 +67,7 @@ module’s declared ports.
 
 ## Simulation inside hierarchy
 
-![LC-3 hierarchy and root circuit](../images/lc3.png)
+![LC-3 hierarchy and root circuit](../images/2026-11-22/lc3.png)
 
 Start simulation from the parent, then select an exact Tree instance or
 double-click its block. The canvas, Nets, displays, and probes show that copy’s
@@ -82,6 +82,12 @@ nets to inspect the selected instance. Waveform names include the instance path.
 Pause to inspect values and Stop before editing a shared definition.
 
 ## Place schematic ports
+
+| Port | Symbol |
+| --- | --- |
+| Input | ![Input port](../images/2026-11-22/components/input_port.png) |
+| Output | ![Output port](../images/2026-11-22/components/output_port.png) |
+| InOut | ![InOut port](../images/2026-11-22/components/inout_port.png) |
 
 Search Components for **Input port**, **Output port**, or **InOut port** and
 place a marker on the child schematic. Each marker creates its own named port.

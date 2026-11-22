@@ -6,12 +6,12 @@
 
 | Component | Symbol                                                      |
 | --------- | ----------------------------------------------------------- |
-| AND       | ![AND as rendered in RGate](../images/components/and.png)   |
-| NAND      | ![NAND as rendered in RGate](../images/components/nand.png) |
-| OR        | ![OR as rendered in RGate](../images/components/or.png)     |
-| NOR       | ![NOR as rendered in RGate](../images/components/nor.png)   |
-| XOR       | ![XOR as rendered in RGate](../images/components/xor.png)   |
-| XNOR      | ![XNOR as rendered in RGate](../images/components/xnor.png) |
+| AND       | ![AND as rendered in RGate](../images/2026-11-22/components/and.png)   |
+| NAND      | ![NAND as rendered in RGate](../images/2026-11-22/components/nand.png) |
+| OR        | ![OR as rendered in RGate](../images/2026-11-22/components/or.png)     |
+| NOR       | ![NOR as rendered in RGate](../images/2026-11-22/components/nor.png)   |
+| XOR       | ![XOR as rendered in RGate](../images/2026-11-22/components/xor.png)   |
+| XNOR      | ![XNOR as rendered in RGate](../images/2026-11-22/components/xnor.png) |
 
 **Pins:** `I0 … I<n−1>` inputs, `Z` output. Configure input count (1–64) and
 output/data width in Properties.
@@ -37,12 +37,12 @@ unknown remaining unknown.
 
 | Component      | Symbol                                                                       |
 | -------------- | ---------------------------------------------------------------------------- |
-| Reduction AND  | ![Reduction AND as rendered in RGate](../images/components/reduce_and.png)   |
-| Reduction NAND | ![Reduction NAND as rendered in RGate](../images/components/reduce_nand.png) |
-| Reduction OR   | ![Reduction OR as rendered in RGate](../images/components/reduce_or.png)     |
-| Reduction NOR  | ![Reduction NOR as rendered in RGate](../images/components/reduce_nor.png)   |
-| Reduction XOR  | ![Reduction XOR as rendered in RGate](../images/components/reduce_xor.png)   |
-| Reduction XNOR | ![Reduction XNOR as rendered in RGate](../images/components/reduce_xnor.png) |
+| Reduction AND  | ![Reduction AND as rendered in RGate](../images/2026-11-22/components/reduce_and.png)   |
+| Reduction NAND | ![Reduction NAND as rendered in RGate](../images/2026-11-22/components/reduce_nand.png) |
+| Reduction OR   | ![Reduction OR as rendered in RGate](../images/2026-11-22/components/reduce_or.png)     |
+| Reduction NOR  | ![Reduction NOR as rendered in RGate](../images/2026-11-22/components/reduce_nor.png)   |
+| Reduction XOR  | ![Reduction XOR as rendered in RGate](../images/2026-11-22/components/reduce_xor.png)   |
+| Reduction XNOR | ![Reduction XNOR as rendered in RGate](../images/2026-11-22/components/reduce_xnor.png) |
 
 **Entries:** Reduction AND, Reduction NAND, Reduction OR, Reduction NOR,
 Reduction XOR, Reduction XNOR.
@@ -67,8 +67,8 @@ changes. A dedicated reduction entry always remains a reduction gate.
 
 | Component | Symbol                                                          |
 | --------- | --------------------------------------------------------------- |
-| Buffer    | ![Buffer as rendered in RGate](../images/components/buffer.png) |
-| NOT       | ![NOT as rendered in RGate](../images/components/not.png)       |
+| Buffer    | ![Buffer as rendered in RGate](../images/2026-11-22/components/buffer.png) |
+| NOT       | ![NOT as rendered in RGate](../images/2026-11-22/components/not.png)       |
 
 **Pins:** `I` input and `Z` output, matching data widths.
 
@@ -81,7 +81,7 @@ drivers rather than assuming an unconnected buffer input is zero.
 
 ## Tri-state buffer
 
-![Tri-state buffer as rendered in RGate](../images/components/tri_state.png)
+![Tri-state buffer as rendered in RGate](../images/2026-11-22/components/tri_state.png)
 
 **Pins:** `I` data input, `E` one-bit enable, `Z` data output. Data width is
 shared by I/Z. Properties contains **Active-low enable** and **Invert enabled

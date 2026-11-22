@@ -4,7 +4,7 @@
 
 ## Switch
 
-![Switch as rendered in RGate](../images/components/switch.png)
+![Switch as rendered in RGate](../images/2026-11-22/components/switch.png)
 
 **Pin:** `Z` output, normally one bit. Initial value comes from Properties.
 During simulation click the switch to toggle 0/1. A fresh run restores its
@@ -15,7 +15,7 @@ switch at zero **asserts** the control; the LC-3's RESET_N is an example.
 
 ## DIP switch
 
-![DIP switch as rendered in RGate](../images/components/dip.png)
+![DIP switch as rendered in RGate](../images/2026-11-22/components/dip.png)
 
 **Pin:** `Z` output, configurable bus width; default eight bits. Set a decimal
 or `0x` initial value before simulation.
@@ -29,15 +29,15 @@ Properties in Edit to change the saved initial value.
 
 | Component | Symbol                                                          |
 | --------- | --------------------------------------------------------------- |
-| Ground    | ![Ground as rendered in RGate](../images/components/ground.png) |
-| Vdd       | ![Vdd as rendered in RGate](../images/components/vdd.png)       |
+| Ground    | ![Ground as rendered in RGate](../images/2026-11-22/components/ground.png) |
+| Vdd       | ![Vdd as rendered in RGate](../images/2026-11-22/components/vdd.png)       |
 
 **Pin:** `Z` output. Ground supplies all-zero bits; Vdd supplies all-one bits at
 the selected width. Use them wherever your circuit needs a digital constant.
 
 ## Clock
 
-![Clock as rendered in RGate](../images/components/clock.png)
+![Clock as rendered in RGate](../images/2026-11-22/components/clock.png)
 
 **Pin:** `Z` one-bit output. Set period, phase delay, and high-duty percentage
 (1–99) in Properties. Period must be at least 2 ns.
@@ -56,16 +56,16 @@ Play advances simulation time. See [simulation](../guides/simulation.md).
 
 | Component            | Symbol                                                                                   |
 | -------------------- | ---------------------------------------------------------------------------------------- |
-| Bit LED              | ![Bit LED as rendered in RGate](../images/components/led.png)                            |
-| Bar graph            | ![Bar graph as rendered in RGate](../images/components/led_bar.png)                      |
-| Direct seven-segment | ![Direct seven-segment as rendered in RGate](../images/components/led_seven_segment.png) |
-| Hexadecimal digits   | ![Hexadecimal digits as rendered in RGate](../images/components/led_hex.png)             |
-| Decimal digits       | ![Decimal digits as rendered in RGate](../images/components/led_decimal.png)             |
+| Bit LED              | ![Bit LED as rendered in RGate](../images/2026-11-22/components/led.png)                            |
+| Bar graph            | ![Bar graph as rendered in RGate](../images/2026-11-22/components/led_bar.png)                      |
+| Direct seven-segment | ![Direct seven-segment as rendered in RGate](../images/2026-11-22/components/led_seven_segment.png) |
+| Hexadecimal digits   | ![Hexadecimal digits as rendered in RGate](../images/2026-11-22/components/led_hex.png)             |
+| Decimal digits       | ![Decimal digits as rendered in RGate](../images/2026-11-22/components/led_decimal.png)             |
 
 **Pin:** `I` input. LEDs display the value on their input. Double-click in Edit
 or select/Enter to choose **Display type**.
 
-![Choosing LED display mode](../images/led-properties.png)
+![Choosing LED display mode](../images/2026-11-22/led-properties.png)
 
 | Mode             | Meaning                                                                  | Recommended width |
 | ---------------- | ------------------------------------------------------------------------ | ----------------- |
@@ -101,7 +101,7 @@ display. LEDs rotate with the component. Choose the display mode in Properties.
 
 ## GPIO peripheral
 
-![GPIO peripheral as rendered in RGate](../images/components/peripheral.png)
+![GPIO peripheral as rendered in RGate](../images/2026-11-22/components/peripheral.png)
 
 **Pins:** `I` input and `Z` output, both at configured width (default eight). Z
 starts at the initial value. Click during simulation to increment it modulo its

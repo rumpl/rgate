@@ -8,7 +8,7 @@ circuit is a full adder, with three switches and two output LEDs.
 
 ## Run your first circuit
 
-![Full adder ready for editing](../images/editor.png)
+![Full adder ready for editing](../images/2026-11-22/editor.png)
 
 1. Press **Space** or click Play.
 2. Click `A`, `B`, and `Cin` to change the inputs.

@@ -18,7 +18,7 @@ ROM supplies RGB444 pixels for the visual display.
    checkerboard. Counter/status signals can be probed and inspected live inside
    the modules.
 
-![Captured color bars and checkerboard from the running circuit](../images/tiny-vga.png)
+![Captured color bars and checkerboard from the running circuit](../images/2026-11-22/tiny-vga.png)
 
 ## Timing
 

@@ -5,7 +5,7 @@
 
 ## Multiplexer
 
-![Multiplexer as rendered in RGate](../images/components/mux.png)
+![Multiplexer as rendered in RGate](../images/2026-11-22/components/mux.png)
 
 **Pins:** `I0 … I<n−1>` data inputs, `S` select input, `Z` data output. Data
 inputs/output share the configured width. Configure input count (2 or more)
@@ -19,7 +19,7 @@ Example: I0=0x12, I1=0x34, S=1, width=8 → Z=0x34.
 
 ## Decoder
 
-![Decoder as rendered in RGate](../images/components/decoder.png)
+![Decoder as rendered in RGate](../images/2026-11-22/components/decoder.png)
 
 **Pins:** `I` binary index input, `E` scalar enable input, `Z0 … Z<n−1>`
 **scalar** outputs. Configure 2–64 output count. I width is
@@ -34,7 +34,7 @@ decoding from taps, decoders, and gates or a ROM.
 
 ## Demultiplexer
 
-![Demultiplexer as rendered in RGate](../images/components/demux.png)
+![Demultiplexer as rendered in RGate](../images/2026-11-22/components/demux.png)
 
 **Pins:** `F` data bus, `S` binary select, `E` scalar enable, `Z0 … Z<n−1>`
 output buses. Configure output count 2–64 and data width.
@@ -45,7 +45,7 @@ enabled. Unlike a mux, it sends **one input to one of many outputs**.
 
 ## Concatenation (Concat)
 
-![Concatenation (Concat) as rendered in RGate](../images/components/concat.png)
+![Concatenation (Concat) as rendered in RGate](../images/2026-11-22/components/concat.png)
 
 **Pins:** partition inputs `I0 …`, full bus output `Z`. Set **Partitions (LSB
 first)** to comma-separated widths. Each width is positive; the sum must equal
@@ -65,7 +65,7 @@ bits are preserved.
 
 ## Bus splitter
 
-![Bus splitter as rendered in RGate](../images/components/splitter.png)
+![Bus splitter as rendered in RGate](../images/2026-11-22/components/splitter.png)
 
 **Pins:** full bus `I`, partitions `Z0 …`. The same partition rules apply. Z0
 extracts the low partition, then Z1 the next group of bits.
@@ -75,7 +75,7 @@ wiring; existing net widths won't automatically resize.
 
 ## Bus tap
 
-![Bus tap as rendered in RGate](../images/components/tap.png)
+![Bus tap as rendered in RGate](../images/2026-11-22/components/tap.png)
 
 **Pins:** full bus input `I`, slice output `Z`. Configure input width, **Tap bit
 offset** (zero-based LSB index), and **Tap output width**. Keep the selected

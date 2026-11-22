@@ -3,14 +3,13 @@
 [Documentation home](../README.md) ·
 [Component reference](../components/README.md)
 
-![Editor panels and component sidebar](../design/ui-refresh/after/1240-light-edit.png)
+![Editor panels and component sidebar](../images/2026-11-22/editor.png)
 
 The editor uses compact, cool-neutral panels around an uninterrupted schematic.
 Blue outlines mark selected tools; blue underlines mark the active workspace.
 Simulation status includes a Play/Pause symbol and text, not color alone.
 Light/Dark appearance remains independent of the Classic/Modern canvas style.
 See the [visual comparison and verification notes](../design/ui-refresh/README.md).
-The older images elsewhere in this guide are historical Classic web captures.
 
 ## Main regions
 
@@ -130,7 +129,7 @@ wires.
 
 ## Properties
 
-![LED properties with display-mode choices](../images/led-properties.png)
+![LED properties with display-mode choices](../images/2026-11-22/led-properties.png)
 
 Double-click a gate, or select it and press Enter / choose **Gate →
 Properties…**. Module instances instead open their definition on a canvas

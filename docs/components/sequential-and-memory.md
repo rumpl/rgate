@@ -4,7 +4,7 @@
 
 ## Register
 
-![Register as rendered in RGate](../images/components/register.png)
+![Register as rendered in RGate](../images/2026-11-22/components/register.png)
 
 | Pin | Direction          | Meaning                            |
 | --- | ------------------ | ---------------------------------- |
@@ -24,7 +24,7 @@ delay. Allow D and the controls to settle before a rising edge.
 
 ## D flip-flop
 
-![D flip-flop as rendered in RGate](../images/components/dff.png)
+![D flip-flop as rendered in RGate](../images/2026-11-22/components/dff.png)
 
 **Pins:** `D`, `CK`, `EN`, `CLR` as above; outputs `Q` and `_Q`. `_Q` is the
 bitwise complement of stored Q. Behavior, active-low control polarity, and
@@ -36,7 +36,7 @@ polarities.
 
 ## JK flip-flop
 
-![JK flip-flop as rendered in RGate](../images/components/jkff.png)
+![JK flip-flop as rendered in RGate](../images/2026-11-22/components/jkff.png)
 
 **Inputs:** `J`, `K` data-width buses; `CK`, `PRE`, `CLR` scalar controls.
 **Outputs:** `Q`, `_Q`.
@@ -55,7 +55,7 @@ Both low yields X. Unconnected PRE/CLR default high; unconnected clock low.
 
 ## RAM
 
-![RAM as rendered in RGate](../images/components/ram.png)
+![RAM as rendered in RGate](../images/2026-11-22/components/ram.png)
 
 | Pin | Direction              | Meaning                         |
 | --- | ---------------------- | ------------------------------- |
@@ -82,7 +82,7 @@ allocating the entire address space.
 
 ## ROM
 
-![ROM as rendered in RGate](../images/components/rom.png)
+![ROM as rendered in RGate](../images/2026-11-22/components/rom.png)
 
 **Pins:** A address input, D data output, OE active-low scalar input. OE=0
 reads; OE=1 releases D to Z. Set the image in Properties or use the runtime

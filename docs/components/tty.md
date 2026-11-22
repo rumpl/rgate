@@ -2,13 +2,13 @@
 
 [Component index](README.md) · [LC-3 example](../examples/lc3.md)
 
-![TTY terminal as rendered in RGate](../images/components/tty.png)
+![TTY terminal as rendered in RGate](../images/2026-11-22/components/tty.png)
 
 TTY provides host text output and queued keyboard/text input through **parallel
 byte buses**. Width is fixed at eight bits. Two protocols are available in
 Properties; choose one before wiring because the pins change.
 
-![LC-3 output in the live terminal](../images/terminal.png)
+![LC-3 output in the live terminal](../images/2026-11-22/terminal.png)
 
 ## Default byte-strobe protocol
 

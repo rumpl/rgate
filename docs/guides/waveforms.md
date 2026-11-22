@@ -6,7 +6,7 @@ Add probes, then choose **Waveforms** in the bottom panel. Resize the panel
 upward if signals or controls need more room. The waveform timeline is
 independent of schematic zoom/pan.
 
-![Waveforms for input A, Sum, and Cout](../images/waveforms.png)
+![Waveforms for input A, Sum, and Cout](../images/2026-11-22/waveforms.png)
 
 ## Timeline
 

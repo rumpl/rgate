@@ -20,7 +20,7 @@ AND gate to a working computer, there's plenty to explore.
 </div>
 
 <figure class="screenshot">
-  <img src="images/readme-editor.png" alt="RGate circuit editor showing a full adder with input switches and output LEDs">
+  <img src="images/2026-11-22/editor.png" alt="RGate circuit editor showing a full adder with input switches and output LEDs">
   <figcaption>A full adder in the RGate workspace. Flip the switches and follow the signals.</figcaption>
 </figure>
 
