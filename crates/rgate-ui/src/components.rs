@@ -139,9 +139,10 @@ impl Render for ComponentDrag {
 
 impl GateApp {
     pub(super) fn component_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let enabled =
-            self.dialog.is_none() && !self.prompting && self.tab != WorkspaceTab::Interface;
-        let query = self.component_search.read(cx).value().trim().to_owned();
+        let enabled = !self.dialogs.is_open()
+            && !self.prompting
+            && self.chrome.tab != WorkspaceTab::Interface;
+        let query = self.chrome.component_search.read(cx).value().trim().to_owned();
         let catalog = catalog()
             .into_iter()
             .filter(|component| matches_search(component, &query))
@@ -216,7 +217,7 @@ impl GateApp {
             )
             .child(
                 div().flex_none().p_1p5().child(
-                    Input::new(&self.component_search)
+                    Input::new(&self.chrome.component_search)
                         .small()
                         .cleanable(true)
                         .prefix(gpui_component::Icon::new(IconName::Search).small()),

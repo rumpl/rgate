@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 impl GateApp {
     pub(super) fn replace_circuit(&mut self, circuit: Circuit, path: Option<PathBuf>) {
-        self.input_swap = None;
+        self.canvas.input_swap = None;
         if path
             .as_ref()
             .is_some_and(|p| p.extension().is_some_and(|s| s == "v" || s == "sv"))
@@ -17,7 +17,7 @@ impl GateApp {
             && circuit.modules.len() > 1
         {
             let selected = circuit.root.clone();
-            self.dialog = Some(Dialog::HdlTop {
+            self.dialogs.show(Dialog::HdlTop {
                 circuit,
                 path,
                 selected,
@@ -34,22 +34,15 @@ impl GateApp {
                 self.editor = editor;
                 self.file = path;
                 self.changed();
-                self.probes.clear();
-                self.dialog = None;
-                self.hover = None;
-                self.drag = None;
-                self.workspace_views.clear();
-                self.saved_probes.clear();
-                if let Some(workspace) = self.persistence.as_ref().and_then(|store| {
-                    store
-                        .preferences
-                        .documents
-                        .get(&self.workspace_key_public())
-                        .cloned()
-                }) {
+                self.sim.clear_all();
+                self.dialogs.close();
+                self.canvas.clear_interaction();
+                self.workspace.views.clear();
+                if let Some(workspace) = self.workspace.saved_document(&self.workspace_key_public())
+                {
                     self.apply_workspace(workspace);
                 } else {
-                    self.need_fit = true;
+                    self.canvas.need_fit = true;
                 }
                 self.flush_workspace();
                 self.log("Circuit loaded.".into());
@@ -64,26 +57,8 @@ impl GateApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<()> {
-        if let Some(Dialog::Properties(dialog)) = &mut self.dialog {
-            let width = dialog.width.read(cx).value().parse()?;
-            let address_bits = dialog.address_bits.read(cx).value().parse()?;
-            let words = rgate_core::parse_sparse_memory(image, width, address_bits)
-                .map_err(anyhow::Error::msg)?;
-            let contents = words
-                .iter()
-                .map(|(address, word)| {
-                    format!(
-                        "@{address:X} {}",
-                        word.to_biguint()
-                            .map(|value| value.to_str_radix(16))
-                            .unwrap_or_else(|| "x".into())
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
-            dialog
-                .memory
-                .update(cx, |field, cx| field.set_value(contents, window, cx));
+        if let Some(Dialog::Properties(dialog)) = &mut self.dialogs.active {
+            dialog.apply_memory_image(image, window, cx)?;
         }
         Ok(())
     }
@@ -176,7 +151,7 @@ impl GateApp {
                     Ok(())
                 })();
                 if let Err(error) = result
-                    && let Some(Dialog::Properties(dialog)) = &mut this.dialog
+                    && let Some(Dialog::Properties(dialog)) = &mut this.dialogs.active
                 {
                     dialog.error = Some(format!("{error:#}"));
                 }
@@ -328,7 +303,7 @@ impl GateApp {
                     Ok(())
                 })();
                 if let Err(error) = result
-                    && let Some(Dialog::Properties(dialog)) = &mut this.dialog
+                    && let Some(Dialog::Properties(dialog)) = &mut this.dialogs.active
                 {
                     dialog.error = Some(format!("{error:#}"));
                 }

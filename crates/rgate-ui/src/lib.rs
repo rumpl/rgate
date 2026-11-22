@@ -106,6 +106,4 @@ mod verilog_editor;
 mod source_editor;
 
 mod hdl_diagnostics;
-
-#[cfg(not(target_family = "wasm"))]
 mod compilation;

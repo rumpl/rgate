@@ -82,7 +82,7 @@ impl GateApp {
                 .gate(gate)
                 .map(|gate| gate.kind.clone())
         };
-        Some(match self.dialog.as_ref()? {
+        Some(match self.dialogs.active.as_ref()? {
             Dialog::HdlSignals { .. } => ("Live HDL signals", 700.0),
             Dialog::HdlTop { .. } => ("Choose top module", 440.0),
             Dialog::VerilogPorts { .. } => ("Verilog module ports", 520.0),
@@ -108,7 +108,7 @@ impl GateApp {
     }
 
     fn dialog_initial_focus(&self, cx: &App) -> Option<FocusHandle> {
-        let field = match self.dialog.as_ref()? {
+        let field = match self.dialogs.active.as_ref()? {
             Dialog::Find { query } | Dialog::HdlSignals { query } => query,
             Dialog::NewModule { name, .. } => name,
             Dialog::Input { value, .. } | Dialog::HdlInput { value, .. } => value,
@@ -122,19 +122,20 @@ impl GateApp {
         Some(field.read(cx).focus_handle(cx))
     }
 
-    /// Opens, replaces or closes the GPUI Kit dialog so it matches `self.dialog`.
+    /// Opens, replaces or closes the GPUI Kit dialog so it matches `self.dialogs.active`.
     pub(crate) fn sync_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let wanted = self.dialog_frame();
         let shown = self
-            .open_dialog
+            .dialogs
+            .open
             .as_ref()
             .map(|open| (open.title, open.width));
         if wanted == shown {
             return;
         }
-        self.open_dialog = wanted.map(|(title, width)| OpenDialog { title, width });
+        self.dialogs.open = wanted.map(|(title, width)| OpenDialog { title, width });
         let app = cx.weak_entity();
-        let closable = !matches!(self.dialog, Some(crate::app::Dialog::Recovery));
+        let closable = !self.dialogs.is_recovery();
         let focus = Cell::new(self.dialog_initial_focus(cx));
         window.defer(cx, move |window, cx| {
             if shown.is_some() {
@@ -162,7 +163,7 @@ impl GateApp {
                     // The app owns the dialog state; returning false leaves closing to `sync_dialog`.
                     .on_ok(move |_, window, cx| {
                         let _ = confirm.update(cx, |this, cx| {
-                            if !matches!(this.dialog, Some(Dialog::Verilog { .. })) {
+                            if !matches!(this.dialogs.active, Some(Dialog::Verilog { .. })) {
                                 this.apply_dialog(window, cx);
                             }
                         });
@@ -195,7 +196,7 @@ impl GateApp {
             .label(label)
             .checked(checked)
             .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                if let Some(dialog) = &mut this.dialog {
+                if let Some(dialog) = &mut this.dialogs.active {
                     toggle(dialog, *checked);
                 }
                 cx.notify();
@@ -203,7 +204,7 @@ impl GateApp {
     }
 
     pub(crate) fn dialog_footer(&self, cx: &mut Context<Self>) -> AnyElement {
-        let Some(dialog) = &self.dialog else {
+        let Some(dialog) = &self.dialogs.active else {
             return div().into_any_element();
         };
         let apply = matches!(
@@ -247,7 +248,7 @@ impl GateApp {
     }
 
     pub(crate) fn dialog_body(&self, cx: &mut Context<Self>) -> AnyElement {
-        let Some(dialog) = &self.dialog else {
+        let Some(dialog) = &self.dialogs.active else {
             return div().into_any_element();
         };
         let theme = cx.theme();
@@ -337,7 +338,7 @@ impl GateApp {
                         .text_color(muted),
                 );
                 let mut list = v_flex().id("hdl-signals-list").h(px(350.0));
-                if let Some(sim) = &self.simulation {
+                if let Some(sim) = &self.sim.live {
                     let filter = query.read(cx).value().to_ascii_lowercase();
                     for (index, signal) in sim
                         .discovered_signals()
@@ -396,7 +397,9 @@ impl GateApp {
                             .label(name.clone())
                             .checked(name == *selected)
                             .on_click(cx.listener(move |this, _: &bool, _, cx| {
-                                if let Some(Dialog::HdlTop { selected, .. }) = &mut this.dialog {
+                                if let Some(Dialog::HdlTop { selected, .. }) =
+                                    &mut this.dialogs.active
+                                {
                                     *selected = name.clone();
                                 }
                                 cx.notify();
@@ -435,7 +438,7 @@ impl GateApp {
             }
             Dialog::Vga { gate } => {
                 content = content.child(self.vga_display(*gate, cx));
-                if self.held_reset_input().is_some() {
+                if self.sim.held_reset_input().is_some() {
                     content = content
                         .child(h_flex().child(self.release_reset_button("vga-release-reset", cx)));
                 }
@@ -500,10 +503,12 @@ impl GateApp {
                 error,
             } => {
                 let words = self
-                    .simulation
+                    .sim
+                    .live
                     .as_ref()
                     .and_then(|sim| {
-                        self.simulation_gate(*gate)
+                        self.sim
+                            .scoped_gate(*gate)
                             .and_then(|id| sim.memory_words(id).ok())
                     })
                     .unwrap_or_default();
@@ -550,10 +555,12 @@ impl GateApp {
             }
             Dialog::Terminal { gate, input, error } => {
                 let output = self
-                    .simulation
+                    .sim
+                    .live
                     .as_ref()
                     .and_then(|sim| {
-                        self.simulation_gate(*gate)
+                        self.sim
+                            .scoped_gate(*gate)
                             .and_then(|id| sim.terminal_output(id).ok())
                     })
                     .unwrap_or_default();
@@ -567,9 +574,9 @@ impl GateApp {
                         .gap_2()
                         .child(self.button(
                             "terminal-run",
-                            if self.running { "Pause" } else { "Run" },
+                            if self.sim.running { "Pause" } else { "Run" },
                             Command::PlayPause,
-                            self.running,
+                            self.sim.running,
                             cx,
                         ))
                         .child(self.button(
@@ -581,11 +588,11 @@ impl GateApp {
                         ))
                         .child(div().text_color(muted).child(format!(
                             "{} · {} ns",
-                            if self.running { "Running" } else { "Paused" },
-                            self.simulation.as_ref().map_or(0, |sim| sim.time())
+                            if self.sim.running { "Running" } else { "Paused" },
+                            self.sim.time()
                         ))),
                 );
-                if self.held_reset_input().is_some() {
+                if self.sim.held_reset_input().is_some() {
                     content = content
                         .child(self.error_text(
                             "RESET_N is 0: the circuit is held in reset and cannot execute.",

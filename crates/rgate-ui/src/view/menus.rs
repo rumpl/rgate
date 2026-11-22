@@ -92,7 +92,7 @@ impl GateApp {
     }
 
     fn open_top_menu(&mut self, name: &'static str, window: &mut Window, cx: &mut Context<Self>) {
-        self.context_menu = None;
+        self.chrome.context_menu = None;
         let app = cx.weak_entity();
         let checks = self.menu_checks();
         let menu = PopupMenu::build(window, cx, move |menu, _, _| {
@@ -109,17 +109,18 @@ impl GateApp {
             window,
             move |this, _, _: &DismissEvent, window, cx| {
                 if this
+                    .chrome
                     .open_menu
                     .as_ref()
                     .is_some_and(|open| open.name == name)
                 {
-                    this.open_menu = None;
+                    this.chrome.open_menu = None;
                     this.focus.focus(window, cx);
                     cx.notify();
                 }
             },
         );
-        self.open_menu = Some(OpenMenu {
+        self.chrome.open_menu = Some(OpenMenu {
             name,
             menu,
             _dismiss: dismiss,
@@ -129,11 +130,12 @@ impl GateApp {
 
     fn toggle_top_menu(&mut self, name: &'static str, window: &mut Window, cx: &mut Context<Self>) {
         if self
+            .chrome
             .open_menu
             .as_ref()
             .is_some_and(|open| open.name == name)
         {
-            self.open_menu = None;
+            self.chrome.open_menu = None;
             self.focus.focus(window, cx);
             cx.notify();
         } else {
@@ -145,6 +147,7 @@ impl GateApp {
         let mut menus = h_flex().gap_0p5();
         for name in MENUS {
             let active_menu = self
+                .chrome
                 .open_menu
                 .as_ref()
                 .filter(|open| open.name == name)
@@ -157,6 +160,7 @@ impl GateApp {
                     .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
                         if *hovered
                             && this
+                                .chrome
                                 .open_menu
                                 .as_ref()
                                 .is_some_and(|open| open.name != name)
@@ -239,9 +243,9 @@ impl GateApp {
             });
         let mut entries = commands::entries(menu);
         entries.retain(|entry| match &entry.command {
-            Some(Command::SwapInputs) => inputs >= 2 && self.simulation.is_none(),
+            Some(Command::SwapInputs) => inputs >= 2 && !self.sim.is_active(),
             Some(Command::Delete | Command::Rotate(_) | Command::Paste | Command::Tool(_)) => {
-                self.simulation.is_none()
+                !self.sim.is_active()
             }
             _ => true,
         });
@@ -276,18 +280,18 @@ impl GateApp {
         if entries.is_empty() {
             return;
         }
-        self.open_menu = None;
+        self.chrome.open_menu = None;
         let app = cx.weak_entity();
         let menu = PopupMenu::build(window, cx, move |menu, _, _| {
             menu_items(menu.min_w(px(220.0)), entries, app, None)
         });
         menu.focus_handle(cx).focus(window, cx);
         let dismiss = cx.subscribe_in(&menu, window, |this, _, _: &DismissEvent, window, cx| {
-            this.context_menu = None;
+            this.chrome.context_menu = None;
             this.focus.focus(window, cx);
             cx.notify();
         });
-        self.context_menu = Some(ContextMenu {
+        self.chrome.context_menu = Some(ContextMenu {
             position,
             menu,
             _dismiss: dismiss,
@@ -295,7 +299,7 @@ impl GateApp {
     }
 
     pub(super) fn context_menu_layer(&self) -> Option<AnyElement> {
-        let menu = self.context_menu.as_ref()?;
+        let menu = self.chrome.context_menu.as_ref()?;
         Some(
             deferred(
                 anchored()

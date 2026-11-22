@@ -18,7 +18,7 @@ use rgate_editor::Tool;
 impl GateApp {
     fn modules_panel(&self, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
-        let rows = if self.module_list {
+        let rows = if self.chrome.module_list {
             self.editor
                 .circuit()
                 .modules
@@ -34,19 +34,19 @@ impl GateApp {
         } else {
             self.editor
                 .circuit()
-                .hierarchy_rows(&self.collapsed_modules)
+                .hierarchy_rows(&self.chrome.collapsed_modules)
         };
         let mut list = v_flex().id("module-list").flex_1().min_h_0().p_1();
         for row in rows {
             let name = row.module.clone();
-            let active = if self.simulation.is_some() {
-                self.debug_path.as_deref() == Some(row.path.as_str())
+            let active = if self.sim.is_active() {
+                self.sim.debug_path.as_deref() == Some(row.path.as_str())
             } else {
                 row.module == self.editor.active_module()
             };
             let expander = if row.has_children {
                 let path = row.path.clone();
-                let expanded = !self.collapsed_modules.contains(&row.path);
+                let expanded = !self.chrome.collapsed_modules.contains(&row.path);
                 Button::new(SharedString::from(format!("expand-{}", row.path)))
                     .ghost()
                     .xsmall()
@@ -56,8 +56,8 @@ impl GateApp {
                         IconName::ChevronRight
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if !this.collapsed_modules.remove(&path) {
-                            this.collapsed_modules.insert(path.clone());
+                        if !this.chrome.collapsed_modules.remove(&path) {
+                            this.chrome.collapsed_modules.insert(path.clone());
                         }
                         cx.stop_propagation();
                         cx.notify();
@@ -108,7 +108,7 @@ impl GateApp {
                     .pl(px(4.0 + row.depth as f32 * 14.0))
                     .child(content)
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.module_list {
+                        if this.chrome.module_list {
                             this.switch_module(name.clone(), cx)
                         } else {
                             this.navigate_scope(navigate_path.clone(), name.clone(), cx)
@@ -138,9 +138,9 @@ impl GateApp {
                             .xsmall()
                             .icon(IconName::ListTree)
                             .tooltip("Instance hierarchy")
-                            .selected(!self.module_list)
+                            .selected(!self.chrome.module_list)
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.module_list = false;
+                                this.chrome.module_list = false;
                                 cx.notify();
                             })),
                     )
@@ -150,9 +150,9 @@ impl GateApp {
                             .xsmall()
                             .icon(IconName::List)
                             .tooltip("Module definitions")
-                            .selected(self.module_list)
+                            .selected(self.chrome.module_list)
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.module_list = true;
+                                this.chrome.module_list = true;
                                 cx.notify();
                             })),
                     ),
@@ -169,17 +169,19 @@ impl GateApp {
             .module()
             .nets
             .iter()
-            .filter(|net| !self.nets_ports || net.port.is_some())
+            .filter(|net| !self.chrome.nets_ports || net.port.is_some())
             .collect::<Vec<_>>();
         definitions.sort_by(|a, b| a.name.cmp(&b.name));
         let mut list = v_flex().id("net-list").flex_1().min_h_0().p_1();
         for net in definitions {
             let id = net.id;
             let value = self
+                .sim
                 .displayed_value(id)
                 .map(ToString::to_string)
                 .unwrap_or_else(|| "—".into());
             let color = self
+                .sim
                 .displayed_value(id)
                 .map(|value| self.palette().signal_color(value))
                 .unwrap_or(muted);
@@ -188,7 +190,7 @@ impl GateApp {
             } else {
                 net.name.clone()
             };
-            let probed = self.is_probed(id);
+            let probed = self.sim.is_probed(id);
             list = list.child(
                 ListItem::new(SharedString::from(format!("net-{}", id.0)))
                     .selected(self.editor.selected_net == Some(id))
@@ -247,11 +249,11 @@ impl GateApp {
                     })),
             );
         }
-        let empty_hint = if !self.nets_ports && self.editor.module().nets.is_empty() {
+        let empty_hint = if !self.chrome.nets_ports && self.editor.module().nets.is_empty() {
             Some(
                 "No nets yet. Placing gates does not create nets. Press W, then connect two pins to add a net here.",
             )
-        } else if self.nets_ports
+        } else if self.chrome.nets_ports
             && self
                 .editor
                 .module()
@@ -273,9 +275,9 @@ impl GateApp {
                     TabBar::new("nets-tabs")
                         .segmented()
                         .xsmall()
-                        .selected_index(usize::from(self.nets_ports))
+                        .selected_index(usize::from(self.chrome.nets_ports))
                         .on_click(cx.listener(|this, index: &usize, _, cx| {
-                            this.nets_ports = *index == 1;
+                            this.chrome.nets_ports = *index == 1;
                             cx.notify();
                         }))
                         .child(Tab::new().label("Nets"))
@@ -303,19 +305,20 @@ impl GateApp {
     pub(super) fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let app = cx.weak_entity();
         v_resizable("sidebar-split")
-            .with_state(&self.layout.sidebar)
+            .with_state(&self.chrome.panels.sidebar)
             .on_resize(move |state, _, cx| {
                 let height = state.read(cx).sizes().first().copied();
                 if let Some(height) = height
-                    && let Err(error) =
-                        app.update(cx, |this, _| this.modules_height = f32::from(height))
+                    && let Err(error) = app.update(cx, |this, _| {
+                        this.chrome.modules_height = f32::from(height)
+                    })
                 {
                     eprintln!("sidebar resize ignored: {error}");
                 }
             })
             .child(
                 resizable_panel()
-                    .size(px(self.modules_height))
+                    .size(px(self.chrome.modules_height))
                     .size_range(px(80.0)..Pixels::MAX)
                     .child(self.modules_panel(cx)),
             )

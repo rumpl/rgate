@@ -1,133 +1,52 @@
+pub mod canvas_controller;
 mod canvas_input;
 mod commands;
+pub mod console;
+pub mod dialog_host;
 mod dialogs;
 mod io;
-mod property_dialog;
+pub mod property_dialog;
+pub mod sim_session;
 mod simulation;
 
-pub use dialogs::{Dialog, NetDialog};
+pub use crate::view::layout::{ContextMenu, OpenMenu, WorkspaceTab};
+pub use canvas_controller::{CanvasController, Drag};
+pub use console::ConsoleLog;
+pub use dialog_host::{Dialog, DialogHost, NetDialog, OpenDialog};
 pub use property_dialog::PropertyDialog;
+pub use sim_session::SimSession;
 
 use crate::{
     commands::Command,
-    live_simulation::LiveSimulation,
+    compilation::HdlCompiler,
     theme::{Appearance, Theme},
+    view::layout::ChromeLayout,
+    waveform_view::WaveformController,
+    workspace::WorkspaceStore,
 };
-use gpui::{Bounds, Context, Entity, FocusHandle, Pixels, Subscription, Task, Window};
-use gpui_component::input::{InputEvent, InputState, TextareaState};
-use gpui_component::menu::PopupMenu;
-use rgate_core::{Circuit, GateId, NetId, Point};
-use rgate_editor::{Editor, Hit};
-use std::{collections::BTreeSet, path::PathBuf, time::Duration};
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum WorkspaceTab {
-    Edit,
-    Interface,
-    Simulate,
-}
-
-pub struct ContextMenu {
-    pub position: gpui::Point<Pixels>,
-    pub menu: Entity<PopupMenu>,
-    pub _dismiss: Subscription,
-}
-
-pub struct OpenMenu {
-    pub name: &'static str,
-    pub menu: Entity<PopupMenu>,
-    pub _dismiss: Subscription,
-}
-
-/// The GPUI Kit dialog currently mirroring `GateApp::dialog`.
-pub struct OpenDialog {
-    pub title: &'static str,
-    pub width: f32,
-}
-
-#[derive(Clone, Debug)]
-pub enum Drag {
-    FrameResize {
-        gate: GateId,
-        anchor: Point,
-        width: f32,
-        height: f32,
-    },
-    Wire(rgate_editor::WireSegmentDrag),
-    Gates {
-        last: Point,
-    },
-    Pan {
-        last: Point,
-    },
-    Marquee {
-        start: Point,
-        end: Point,
-        additive: bool,
-    },
-}
+use gpui::{Context, FocusHandle, Task, Window};
+use rgate_core::Circuit;
+use rgate_editor::Editor;
+use std::{path::PathBuf, time::Duration};
 
 pub struct GateApp {
-    #[cfg(not(target_family = "wasm"))]
-    pub lint_due: Option<std::time::Instant>,
-    #[cfg(not(target_family = "wasm"))]
-    pub lint_result: Option<(
-        Circuit,
-        std::sync::mpsc::Receiver<Result<(), rgate_sim::SimError>>,
-    )>,
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    pub background_compilation: bool,
-    #[cfg(not(target_family = "wasm"))]
-    pub compilation: Option<crate::compilation::Compilation>,
-    pub hdl_diagnostics: Vec<crate::hdl_diagnostics::HdlDiagnostic>,
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    pub diagnostic_line: Option<u32>,
-    #[cfg(not(target_family = "wasm"))]
-    pub source_editor: Option<crate::source_editor::SourceEditor>,
-    pub theme: Theme,
-    pub appearance: Appearance,
     pub editor: Editor,
     pub file: Option<PathBuf>,
     pub focus: FocusHandle,
-    pub simulation: Option<LiveSimulation>,
-    pub debug_path: Option<String>,
-    pub running: bool,
-    pub tab: WorkspaceTab,
-    pub bottom_scope: bool,
-    pub waveform: crate::waveform::WaveformSettings,
-    pub waveform_search: Entity<InputState>,
-    pub wave_bounds: Bounds<Pixels>,
-    pub wave_drag: Option<crate::waveform_view::WaveDrag>,
-    pub nets_ports: bool,
-    pub module_list: bool,
-    pub collapsed_modules: std::collections::HashSet<String>,
-    pub probes: BTreeSet<NetId>,
-    pub messages: Vec<String>,
-    pub message_log: Entity<TextareaState>,
-    pub status: String,
-    pub hover: Option<Hit>,
-    pub input_swap: Option<(GateId, Option<String>)>,
-    pub mouse: Point,
-    pub context_menu: Option<ContextMenu>,
-    pub open_menu: Option<OpenMenu>,
-    pub dialog: Option<Dialog>,
-    pub open_dialog: Option<OpenDialog>,
-    pub drag: Option<Drag>,
-    pub canvas_bounds: Bounds<Pixels>,
-    pub sidebar_width: f32,
-    pub components_width: f32,
-    pub component_search: Entity<InputState>,
-    pub modules_height: f32,
-    pub bottom_height: f32,
-    pub layout: crate::view::PanelLayout,
-    pub need_fit: bool,
-    /// The viewport produced by the last automatic fit, while the user has not moved it.
-    pub auto_fit: Option<rgate_editor::Viewport>,
+    pub theme: Theme,
+    pub appearance: Appearance,
+    pub sim: SimSession,
+    pub hdl: HdlCompiler,
+    #[cfg(not(target_family = "wasm"))]
+    pub source_editor: Option<crate::source_editor::SourceEditor>,
+    pub canvas: CanvasController,
+    pub waveform: WaveformController,
+    pub console: ConsoleLog,
+    pub chrome: ChromeLayout,
+    pub dialogs: DialogHost,
+    pub workspace: WorkspaceStore,
     pub closing: bool,
     pub prompting: bool,
-    pub persistence: Option<crate::workspace::Persistence>,
-    pub workspace_views: std::collections::BTreeMap<String, crate::workspace::ViewState>,
-    pub saved_probes: std::collections::BTreeSet<crate::workspace::SavedProbe>,
     timer: Option<Task<()>>,
 }
 
@@ -140,80 +59,25 @@ impl GateApp {
     ) -> Self {
         let focus = cx.focus_handle();
         focus.focus(window, cx);
-        let component_search = crate::input::search_field("Search components…", window, cx);
-        cx.subscribe(&component_search, |_, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                cx.notify();
-            }
-        })
-        .detach();
-        let waveform_search = crate::input::search_field("Filter signals…", window, cx);
-        cx.subscribe(&waveform_search, |this, field, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.waveform.filter = field.read(cx).value().to_string();
-                this.waveform.row_offset = 0;
-                cx.notify();
-            }
-        })
-        .detach();
-        let message_log = crate::input::text_area("", window, cx);
-        let layout = crate::view::PanelLayout::new(cx);
+        let waveform = WaveformController::new(window, cx);
+        let console = ConsoleLog::new(window, cx);
+        let chrome = ChromeLayout::new(window, cx);
         let mut this = Self {
-            background_compilation: false,
-            #[cfg(not(target_family = "wasm"))]
-            compilation: None,
-            #[cfg(not(target_family = "wasm"))]
-            lint_due: None,
-            #[cfg(not(target_family = "wasm"))]
-            lint_result: None,
-            hdl_diagnostics: Vec::new(),
-            diagnostic_line: None,
-            #[cfg(not(target_family = "wasm"))]
-            source_editor: None,
-            waveform_search,
-            component_search,
-            waveform: crate::waveform::WaveformSettings::default(),
-            wave_bounds: Bounds::default(),
-            wave_drag: None,
-            persistence: None,
-            workspace_views: std::collections::BTreeMap::new(),
-            saved_probes: std::collections::BTreeSet::new(),
-            message_log,
-            layout,
-            theme: Theme::default(),
-            appearance: Appearance::default(),
             editor: Editor::new(circuit).expect("startup circuit is validated"),
             file,
             focus,
-            simulation: None,
-            debug_path: None,
-            running: false,
-            tab: WorkspaceTab::Edit,
-            bottom_scope: false,
-            nets_ports: false,
-            module_list: false,
-            collapsed_modules: std::collections::HashSet::new(),
-            probes: BTreeSet::new(),
-            messages: vec![
-                "RGate 0.1 — TkGate-style circuit editing, powered by Rust + GPUI.".into(),
-                "Click a tool to place gates. W connects pins; Space runs; double-click a wire probes it.".into(),
-            ],
-            status: "Ready".into(),
-            hover: None,
-            input_swap: None,
-            mouse: Point::ZERO,
-            context_menu: None,
-            open_menu: None,
-            dialog: None,
-            open_dialog: None,
-            drag: None,
-            canvas_bounds: Bounds::default(),
-            sidebar_width: 210.0,
-            components_width: 205.0,
-            modules_height: 196.0,
-            bottom_height: 176.0,
-            need_fit: true,
-            auto_fit: None,
+            theme: Theme::default(),
+            appearance: Appearance::default(),
+            sim: SimSession::default(),
+            hdl: HdlCompiler::default(),
+            #[cfg(not(target_family = "wasm"))]
+            source_editor: None,
+            canvas: CanvasController::default(),
+            waveform,
+            console,
+            chrome,
+            dialogs: DialogHost::default(),
+            workspace: WorkspaceStore::default(),
             closing: false,
             prompting: false,
             timer: None,
@@ -225,11 +89,8 @@ impl GateApp {
                     .await;
                 let result = entity.update(cx, |this, cx| {
                     #[cfg(not(target_family = "wasm"))]
-                    {
-                        this.poll_compilation(cx);
-                        this.poll_source_check(cx);
-                    }
-                    if this.running {
+                    this.poll_hdl_tasks(cx);
+                    if this.sim.running {
                         this.advance_running(cx);
                     }
                     this.persistence_tick();
@@ -273,32 +134,25 @@ impl GateApp {
     }
 
     pub fn log(&mut self, message: String) {
-        self.status = message.clone();
-        self.messages.push(message);
-        if self.messages.len() > 200 {
-            self.messages.remove(0);
-        }
+        self.console.log(message);
     }
 
     pub(crate) fn error(&mut self, error: impl std::fmt::Display) {
         let message = error.to_string();
-        self.hdl_diagnostics = crate::hdl_diagnostics::parse(&message);
-        if !self.hdl_diagnostics.is_empty() {
-            self.bottom_scope = false;
+        if self.hdl.record_error_diagnostics(&message) {
+            self.chrome.bottom_scope = false;
         }
         self.log(format!("Error: {message}"));
     }
 
     pub fn changed(&mut self) {
-        self.input_swap = None;
-        #[cfg(not(target_family = "wasm"))]
-        self.cancel_compilation();
-        self.simulation = None;
-        self.debug_path = None;
-        self.probes.clear();
-        self.running = false;
-        if self.tab == WorkspaceTab::Simulate {
-            self.tab = WorkspaceTab::Edit;
+        self.canvas.input_swap = None;
+        if self.hdl.cancel() {
+            self.log("Compilation cancelled.".into());
+        }
+        self.sim.reset();
+        if self.chrome.tab == WorkspaceTab::Simulate {
+            self.chrome.tab = WorkspaceTab::Edit;
         }
     }
 }

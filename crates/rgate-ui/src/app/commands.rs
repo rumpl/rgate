@@ -8,15 +8,13 @@ use rgate_core::{Circuit, Direction, Module, Point};
 
 impl GateApp {
     pub fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
-        self.context_menu = None;
-        self.input_swap = None;
-        if matches!(command, Command::LoadMemory)
-            && matches!(self.dialog, Some(Dialog::Properties(_)))
-        {
+        self.chrome.context_menu = None;
+        self.canvas.input_swap = None;
+        if matches!(command, Command::LoadMemory) && self.dialogs.is_properties() {
             self.load_memory_image(window, cx);
             return;
         }
-        if self.simulation.is_some()
+        if self.sim.is_active()
             && matches!(
                 command,
                 Command::Align(_)
@@ -32,17 +30,16 @@ impl GateApp {
         if self.prompting {
             return;
         }
-        if matches!(
-            self.dialog,
-            Some(Dialog::Terminal { .. } | Dialog::Vga { .. } | Dialog::HdlSignals { .. })
-        ) && matches!(
-            command,
-            Command::PlayPause | Command::Step | Command::ClockStep
-        ) {
+        if self.dialogs.allows_sim_transport()
+            && matches!(
+                command,
+                Command::PlayPause | Command::Step | Command::ClockStep
+            )
+        {
             self.execute(command, window, cx);
             return;
         }
-        if self.dialog.is_some() {
+        if self.dialogs.is_open() {
             return;
         }
         if matches!(command, Command::New | Command::Open | Command::Quit) && self.editor.is_dirty()
@@ -95,7 +92,11 @@ impl GateApp {
 
     fn execute(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         #[cfg(not(target_family = "wasm"))]
-        if self.compile_before_command(&command, window, cx) {
+        if self
+            .hdl
+            .should_compile_in_background(self.sim.is_active(), self.editor.circuit(), &command)
+        {
+            self.start_compilation(command, cx);
             return;
         }
         match command {
@@ -132,20 +133,20 @@ impl GateApp {
             }
             Command::SwapInputs => self.swap_selected_inputs(),
             Command::Tool(tool) => {
-                if self.simulation.is_some() {
+                if self.sim.is_active() {
                     self.changed();
                 }
                 self.editor.set_tool(tool);
-                self.status = self.tool_hint().into();
-                self.tab = WorkspaceTab::Edit;
+                self.console.set_status(self.tool_hint());
+                self.chrome.tab = WorkspaceTab::Edit;
             }
             Command::PlayPause => {
                 if self.ensure_simulator() {
-                    self.running = !self.running;
-                    self.tab = WorkspaceTab::Simulate;
-                    self.bottom_scope = true;
+                    self.sim.running = !self.sim.running;
+                    self.chrome.tab = WorkspaceTab::Simulate;
+                    self.chrome.bottom_scope = true;
                     self.log(
-                        if self.running {
+                        if self.sim.running {
                             "Simulation running — click switches to change inputs."
                         } else {
                             "Simulation paused."
@@ -155,40 +156,29 @@ impl GateApp {
                 }
             }
             Command::Stop => {
-                #[cfg(not(target_family = "wasm"))]
-                self.cancel_compilation();
+                if self.hdl.cancel() {
+                    self.log("Compilation cancelled.".into());
+                }
                 self.remember_view();
-                self.simulation = None;
-                self.debug_path = None;
-                self.running = false;
-                self.tab = WorkspaceTab::Edit;
+                self.sim.stop();
+                self.chrome.tab = WorkspaceTab::Edit;
                 self.remember_view();
                 self.log("Simulation stopped; circuit values reset.".into());
             }
             Command::Step | Command::ClockStep => {
                 if self.ensure_simulator() {
-                    self.running = false;
-                    self.tab = WorkspaceTab::Simulate;
-                    self.bottom_scope = true;
-                    let period = self.simulation.as_ref().unwrap().clock_period();
-                    let result = if matches!(command, Command::Step) {
-                        self.simulation.as_mut().unwrap().step()
-                    } else {
-                        self.simulation.as_mut().unwrap().advance(period)
-                    };
-                    if let Err(error) = result {
+                    self.chrome.tab = WorkspaceTab::Simulate;
+                    self.chrome.bottom_scope = true;
+                    if let Err(error) = self.sim.step(matches!(command, Command::ClockStep)) {
                         self.error(error);
                     }
                 }
             }
             Command::Zoom(factor) => {
-                let center = Point::new(
-                    f32::from(self.canvas_bounds.size.width) / 2.0,
-                    f32::from(self.canvas_bounds.size.height) / 2.0,
-                );
+                let center = self.canvas.center_screen();
                 self.editor.viewport.zoom_at(factor, center);
             }
-            Command::Fit => self.need_fit = true,
+            Command::Fit => self.canvas.need_fit = true,
             Command::SetTheme(theme) => {
                 self.theme = theme;
                 window.refresh();
@@ -196,19 +186,20 @@ impl GateApp {
             Command::SetAppearance(appearance) => self.set_appearance(appearance, window, cx),
             Command::ToggleGrid => self.editor.show_grid = !self.editor.show_grid,
             Command::ToggleSnap => self.editor.snap = !self.editor.snap,
-            Command::ToggleScope => self.bottom_scope = !self.bottom_scope,
+            Command::ToggleScope => self.chrome.bottom_scope = !self.chrome.bottom_scope,
             Command::EditSymbol => {
-                self.running = false;
+                self.sim.pause();
                 let module = self.editor.active_module().to_owned();
                 let shapes = self.editor.module().symbol.clone();
-                self.dialog = Some(Dialog::Symbol(crate::symbol_editor::SymbolDialog {
-                    module,
-                    shapes,
-                    tool: crate::symbol_editor::SymbolTool::Line,
-                    start: None,
-                    bounds: Bounds::default(),
-                    text: crate::input::text_field("Label", window, cx),
-                }));
+                self.dialogs
+                    .show(Dialog::Symbol(crate::symbol_editor::SymbolDialog {
+                        module,
+                        shapes,
+                        tool: crate::symbol_editor::SymbolTool::Line,
+                        start: None,
+                        bounds: Bounds::default(),
+                        text: crate::input::text_field("Label", window, cx),
+                    }));
             }
             Command::Find => {
                 let query =
@@ -219,7 +210,7 @@ impl GateApp {
                     }
                 })
                 .detach();
-                self.dialog = Some(Dialog::Find { query });
+                self.dialogs.show(Dialog::Find { query });
             }
             Command::Align(alignment) => match self.editor.align_selection(alignment) {
                 Ok(()) => self.changed(),
@@ -239,7 +230,7 @@ impl GateApp {
             Command::TidyLayout => match self.editor.tidy_layout() {
                 Ok(()) => {
                     self.changed();
-                    self.need_fit = true;
+                    self.canvas.need_fit = true;
                     self.log(
                         "Tidied component placement and wire routes; Undo restores both.".into(),
                     );
@@ -274,7 +265,7 @@ impl GateApp {
                         }
                     })
                     .detach();
-                    self.dialog = Some(Dialog::HdlSignals { query });
+                    self.dialogs.show(Dialog::HdlSignals { query });
                 }
             }
             Command::SetHdlInput => {
@@ -282,16 +273,17 @@ impl GateApp {
                     && let Some(net) = self
                         .editor
                         .selected_net
-                        .and_then(|n| self.simulation_net(n))
+                        .and_then(|n| self.sim.scoped_net(n))
                     && self
-                        .simulation
+                        .sim
+                        .live
                         .as_ref()
                         .unwrap()
                         .source_input(net)
                         .is_some()
                 {
-                    self.running = false;
-                    self.dialog = Some(Dialog::HdlInput {
+                    self.sim.pause();
+                    self.dialogs.show(Dialog::HdlInput {
                         net,
                         value: crate::input::text_field("0", window, cx),
                         error: None,
@@ -311,7 +303,7 @@ impl GateApp {
                     index += 1;
                 }
                 let field = crate::input::text_field(format!("module{index}"), window, cx);
-                self.dialog = Some(Dialog::NewModule {
+                self.dialogs.show(Dialog::NewModule {
                     name: field,
                     error: None,
                 });
@@ -333,8 +325,8 @@ impl GateApp {
                     }
                 }
             }
-            Command::Help => self.dialog = Some(Dialog::Help),
-            Command::About => self.dialog = Some(Dialog::About),
+            Command::Help => self.dialogs.show(Dialog::Help),
+            Command::About => self.dialogs.show(Dialog::About),
             Command::Quit => {
                 #[cfg(not(target_family = "wasm"))]
                 {
@@ -347,7 +339,7 @@ impl GateApp {
                 self.log("To leave the web app, close this browser tab.".into());
             }
         }
-        if !matches!(self.dialog, Some(Dialog::Recovery)) {
+        if !self.dialogs.is_recovery() {
             self.flush_workspace();
         }
         cx.notify();
@@ -391,7 +383,7 @@ impl GateApp {
     }
 
     fn swap_selected_inputs(&mut self) {
-        if self.simulation.is_some() {
+        if self.sim.is_active() {
             self.log("Stop simulation before swapping inputs.".into());
             return;
         }
@@ -419,9 +411,10 @@ impl GateApp {
             }
         } else if inputs.len() > 2 {
             self.editor.cancel();
-            self.drag = None;
-            self.input_swap = Some((id, None));
-            self.status = "Swap inputs: click the first input pin; Escape cancels.".into();
+            self.canvas.drag = None;
+            self.canvas.input_swap = Some((id, None));
+            self.console
+                .set_status("Swap inputs: click the first input pin; Escape cancels.");
         }
     }
 }

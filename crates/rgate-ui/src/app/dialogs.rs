@@ -1,97 +1,61 @@
-use super::{GateApp, PropertyDialog, WorkspaceTab};
+use super::{Dialog, GateApp, NetDialog, PropertyDialog, WorkspaceTab};
 use anyhow::{Context as _, Result};
-use gpui::{Context, Entity, Window};
-use gpui_component::input::{InputState, TextareaState};
-use rgate_core::{Circuit, GateId, GateKind, Module, NetId, Signal};
+use gpui::{Context, Window};
+use rgate_core::{GateId, GateKind, Module, NetId, Signal};
 use rgate_editor::Tool;
-use std::path::PathBuf;
-
-pub struct NetDialog {
-    pub net: NetId,
-    pub name: Entity<InputState>,
-    pub width: Entity<InputState>,
-    pub show_name: bool,
-    pub error: Option<String>,
-}
-
-pub enum Dialog {
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    VerilogPorts {
-        module: String,
-        error: Option<String>,
-    },
-    HdlSignals {
-        query: Entity<InputState>,
-    },
-    HdlTop {
-        circuit: Circuit,
-        path: Option<PathBuf>,
-        selected: String,
-    },
-    Verilog {
-        creating: bool,
-        name: Entity<InputState>,
-        source: Entity<TextareaState>,
-        interface: Entity<TextareaState>,
-        error: Option<String>,
-    },
-    HdlInput {
-        net: NetId,
-        value: Entity<InputState>,
-        error: Option<String>,
-    },
-    Vga {
-        gate: GateId,
-    },
-    Find {
-        query: Entity<InputState>,
-    },
-    Recovery,
-    Symbol(crate::symbol_editor::SymbolDialog),
-    Input {
-        gate: GateId,
-        value: Entity<InputState>,
-        error: Option<String>,
-    },
-    Memory {
-        gate: GateId,
-        address: Entity<InputState>,
-        value: Entity<InputState>,
-        error: Option<String>,
-    },
-    Net(Box<NetDialog>),
-    Terminal {
-        gate: GateId,
-        input: Entity<InputState>,
-        error: Option<String>,
-    },
-    Properties(Box<PropertyDialog>),
-    NewModule {
-        name: Entity<InputState>,
-        error: Option<String>,
-    },
-    Help,
-    About,
-}
 
 impl GateApp {
-    pub fn dismiss_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.dialog, Some(Dialog::Recovery)) {
+    pub fn select_led_display(
+        &mut self,
+        mode: rgate_core::LedDisplay,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(Dialog::Properties(dialog)) = &mut self.dialogs.active {
+            let connected = self
+                .editor
+                .module()
+                .gate(dialog.gate)
+                .is_some_and(|gate| gate.pins.iter().any(|pin| pin.net.is_some()));
+            dialog.select_led_display(mode, connected, window, cx);
+        }
+        cx.notify();
+    }
+
+    pub fn show_properties(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(net) = self.editor.selected_net {
+            if let Some(definition) = self.editor.module().net(net) {
+                self.dialogs
+                    .show(Dialog::Net(Box::new(NetDialog::from_net(definition, window, cx))));
+            }
             return;
         }
-        self.dialog = None;
+        let Some(id) = self.editor.selection.iter().next().copied() else {
+            self.log("Select a gate first; module ports are edited in the Interface tab.".into());
+            return;
+        };
+        let Some(gate) = self.editor.module().gate(id) else {
+            return;
+        };
+        let dialog = PropertyDialog::from_gate(gate, window, cx);
+        self.dialogs.show(Dialog::Properties(Box::new(dialog)));
+        self.sim.pause();
+    }
+
+    pub fn dismiss_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.dialogs.dismiss() {
+            return;
+        }
         self.focus.focus(window, cx);
         cx.notify();
     }
 
     pub fn apply_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.dialog, Some(Dialog::VerilogPorts { .. })) {
-            match self.refresh_verilog_ports() {
+        if matches!(self.dialogs.active, Some(Dialog::VerilogPorts { .. })) {
+            match crate::verilog_editor::refresh_ports(&mut self.editor) {
                 Ok(()) => self.log("Module ports refreshed from source.".into()),
                 Err(error) => {
-                    if let Some(Dialog::VerilogPorts { error: slot, .. }) = &mut self.dialog {
-                        *slot = Some(error.to_string());
-                    }
+                    let _ = self.dialogs.set_error(error);
                 }
             }
             cx.notify();
@@ -101,17 +65,17 @@ impl GateApp {
             circuit,
             path,
             selected,
-        }) = self.dialog.as_ref()
+        }) = self.dialogs.active.as_ref()
         {
             let mut circuit = circuit.clone();
             circuit.root = selected.clone();
             let path = path.clone();
-            self.dialog = None;
+            self.dialogs.close();
             self.load_document(circuit, path);
             cx.notify();
             return;
         }
-        if let Some(Dialog::Find { query }) = &self.dialog {
+        if let Some(Dialog::Find { query }) = &self.dialogs.active {
             if let Some(result) =
                 rgate_editor::search(self.editor.circuit(), &query.read(cx).value())
                     .into_iter()
@@ -121,22 +85,22 @@ impl GateApp {
             }
             return;
         }
-        if matches!(self.dialog, Some(Dialog::Recovery)) {
+        if self.dialogs.is_recovery() {
             self.restore_recovery(window, cx);
             return;
         }
         if matches!(
-            self.dialog,
+            self.dialogs.active,
             Some(Dialog::Help | Dialog::About | Dialog::Vga { .. } | Dialog::HdlSignals { .. })
         ) {
-            self.dialog = None;
+            self.dialogs.close();
             self.focus.focus(window, cx);
             cx.notify();
             return;
         }
 
         let terminal_dialog = matches!(
-            self.dialog,
+            self.dialogs.active,
             Some(
                 Dialog::Terminal { .. }
                     | Dialog::Memory { .. }
@@ -144,30 +108,29 @@ impl GateApp {
                     | Dialog::HdlInput { .. }
             )
         );
-        let creating_module = matches!(self.dialog, Some(Dialog::NewModule { .. }));
-        let runtime_dialog_gate = match self.dialog.as_ref() {
+        let creating_module = matches!(self.dialogs.active, Some(Dialog::NewModule { .. }));
+        let runtime_dialog_gate = match self.dialogs.active.as_ref() {
             Some(
                 Dialog::Memory { gate, .. }
                 | Dialog::Terminal { gate, .. }
                 | Dialog::Input { gate, .. },
-            ) => self.simulation_gate(*gate),
+            ) => self.sim.scoped_gate(*gate),
             _ => None,
         };
 
         let result = self.commit_dialog(runtime_dialog_gate, cx);
         match result {
             Ok(()) => {
-                self.dialog = None;
+                self.dialogs.close();
                 if !terminal_dialog {
                     self.changed();
                 }
                 if creating_module {
-                    self.probes.clear();
-                    self.hover = None;
-                    self.drag = None;
+                    self.sim.probes.clear();
+                    self.canvas.clear_interaction();
                     self.editor.set_tool(Tool::Select);
-                    self.tab = WorkspaceTab::Edit;
-                    self.need_fit = true;
+                    self.chrome.tab = WorkspaceTab::Edit;
+                    self.canvas.need_fit = true;
                     self.log(format!(
                         "Created module {}. Place gates, then connect pins to create nets.",
                         self.editor.active_module()
@@ -175,7 +138,11 @@ impl GateApp {
                 }
                 self.focus.focus(window, cx);
             }
-            Err(error) => self.set_dialog_error(error),
+            Err(error) => {
+                if let Some(unhandled) = self.dialogs.set_error(error) {
+                    self.error(unhandled);
+                }
+            }
         }
         cx.notify();
     }
@@ -185,7 +152,7 @@ impl GateApp {
         runtime_dialog_gate: Option<GateId>,
         cx: &Context<Self>,
     ) -> Result<()> {
-        match self.dialog.as_ref() {
+        match self.dialogs.active.as_ref() {
             Some(Dialog::Verilog {
                 creating,
                 name,
@@ -202,16 +169,35 @@ impl GateApp {
             Some(Dialog::HdlInput { net, value, .. }) => {
                 let net = *net;
                 let raw = value.read(cx).value().to_string();
-                self.apply_hdl_input_dialog(net, &raw)
+                let sim = self.sim.live.as_mut().context("Simulation inactive")?;
+                let gate = sim.source_input(net).context("Not an interactive input")?;
+                let width = sim.value(net).context("Missing input")?.width();
+                let value = Signal::parse(raw.trim_start_matches("0x"), width, 16)
+                    .map_err(anyhow::Error::msg)?;
+                sim.set_input(gate, value)?;
+                Ok(())
             }
             Some(Dialog::Symbol(dialog)) => self
                 .editor
                 .set_module_symbol(&dialog.module, dialog.shapes.clone())
                 .map_err(Into::into),
             Some(Dialog::Input { gate, value, .. }) => {
-                let gate = *gate;
-                let raw = value.read(cx).value().to_string();
-                self.apply_input_dialog(gate, runtime_dialog_gate, &raw)
+                let width = self
+                    .editor
+                    .module()
+                    .gate(*gate)
+                    .context("Input no longer exists")?
+                    .width;
+                let word = Signal::parse(
+                    value.read(cx).value().trim_start_matches("0x"),
+                    width,
+                    16,
+                )
+                .map_err(anyhow::Error::msg)?;
+                let sim = self.sim.live.as_mut().context("Simulation inactive")?;
+                sim.set_input(runtime_dialog_gate.context("No runtime input")?, word)?;
+                sim.advance(30)?;
+                Ok(())
             }
             Some(Dialog::Memory {
                 gate,
@@ -219,14 +205,36 @@ impl GateApp {
                 value,
                 ..
             }) => {
-                let gate = *gate;
-                let address = address.read(cx).value().to_string();
-                let raw = value.read(cx).value().to_string();
-                self.apply_memory_dialog(gate, runtime_dialog_gate, &address, &raw)
+                let address: usize = address
+                    .read(cx)
+                    .value()
+                    .parse()
+                    .context("Address must be a decimal number.")?;
+                let width = self
+                    .editor
+                    .module()
+                    .gate(*gate)
+                    .context("Memory no longer exists.")?
+                    .width;
+                let word = Signal::parse(
+                    value.read(cx).value().trim_start_matches("0x"),
+                    width,
+                    16,
+                )
+                .map_err(anyhow::Error::msg)?;
+                let runtime_id =
+                    runtime_dialog_gate.context("Memory is not in this live instance.")?;
+                self.sim
+                    .live
+                    .as_mut()
+                    .context("Simulation is not active.")?
+                    .set_memory_word(runtime_id, address, word)?;
+                Ok(())
             }
             Some(Dialog::Terminal { input, .. }) => {
                 let text = input.read(cx).value().to_string();
-                self.simulation
+                self.sim
+                    .live
                     .as_mut()
                     .context("Start simulation before sending terminal input.")
                     .and_then(|sim| {
@@ -238,35 +246,8 @@ impl GateApp {
                         .map_err(Into::into)
                     })
             }
-            Some(Dialog::Net(dialog)) => {
-                let id = dialog.net;
-                let name = dialog.name.read(cx).value().trim().to_owned();
-                let width = dialog.width.read(cx).value().to_string();
-                let show = dialog.show_name;
-                self.apply_net_dialog(id, name, &width, show)
-            }
-            Some(Dialog::Properties(dialog))
-                if self.editor.module().gate(dialog.gate).is_some_and(|gate| {
-                    matches!(gate.kind, GateKind::Frame | GateKind::Comment)
-                }) =>
-            {
-                let dialog = dialog.as_ref();
-                let id = dialog.gate;
-                let name = dialog.name.read(cx).value().trim().to_owned();
-                let frame_width = dialog.frame_width.read(cx).value().to_string();
-                let frame_height = dialog.frame_height.read(cx).value().to_string();
-                let title = dialog.comment.read(cx).value().replace("\\n", "\n");
-                let show_name = dialog.show_name;
-                self.apply_annotation_properties(
-                    id,
-                    name,
-                    &frame_width,
-                    &frame_height,
-                    title,
-                    show_name,
-                )
-            }
-            Some(Dialog::Properties(_)) => self.apply_gate_properties(cx),
+            Some(Dialog::Net(dialog)) => dialog.apply_to_editor(&mut self.editor, cx),
+            Some(Dialog::Properties(dialog)) => dialog.apply_to_editor(&mut self.editor, cx),
             Some(Dialog::NewModule { name, .. }) => self
                 .editor
                 .create_module(name.read(cx).value().trim().to_owned())
@@ -357,111 +338,5 @@ impl GateApp {
             module.nets = nets;
         })?;
         Ok(())
-    }
-
-    fn apply_hdl_input_dialog(&mut self, net: NetId, raw: &str) -> Result<()> {
-        let sim = self.simulation.as_mut().context("Simulation inactive")?;
-        let gate = sim.source_input(net).context("Not an interactive input")?;
-        let width = sim.value(net).context("Missing input")?.width();
-        let value = Signal::parse(raw.trim_start_matches("0x"), width, 16)
-            .map_err(anyhow::Error::msg)?;
-        sim.set_input(gate, value)?;
-        Ok(())
-    }
-
-    fn apply_input_dialog(
-        &mut self,
-        gate: GateId,
-        runtime_gate: Option<GateId>,
-        raw: &str,
-    ) -> Result<()> {
-        let width = self
-            .editor
-            .module()
-            .gate(gate)
-            .context("Input no longer exists")?
-            .width;
-        let word = Signal::parse(raw.trim_start_matches("0x"), width, 16)
-            .map_err(anyhow::Error::msg)?;
-        self.simulation
-            .as_mut()
-            .context("Simulation inactive")?
-            .set_input(runtime_gate.context("No runtime input")?, word)?;
-        self.simulation.as_mut().unwrap().advance(30)?;
-        Ok(())
-    }
-
-    fn apply_memory_dialog(
-        &mut self,
-        gate: GateId,
-        runtime_gate: Option<GateId>,
-        address_raw: &str,
-        value_raw: &str,
-    ) -> Result<()> {
-        let address: usize = address_raw
-            .parse()
-            .context("Address must be a decimal number.")?;
-        let width = self
-            .editor
-            .module()
-            .gate(gate)
-            .context("Memory no longer exists.")?
-            .width;
-        let word = Signal::parse(value_raw.trim_start_matches("0x"), width, 16)
-            .map_err(anyhow::Error::msg)?;
-        let runtime_id = runtime_gate.context("Memory is not in this live instance.")?;
-        self.simulation
-            .as_mut()
-            .context("Simulation is not active.")?
-            .set_memory_word(runtime_id, address, word)?;
-        Ok(())
-    }
-
-    fn apply_net_dialog(
-        &mut self,
-        id: NetId,
-        name: String,
-        width_raw: &str,
-        show: bool,
-    ) -> Result<()> {
-        if name.is_empty() {
-            anyhow::bail!("Net name must not be empty.");
-        }
-        let width: u16 = width_raw.parse().context("Width must be 1–4096.")?;
-        if !(1..=4096).contains(&width) {
-            anyhow::bail!("Width must be 1–4096.");
-        }
-        if self.editor.module().gates.iter().any(|gate| {
-            gate.pins
-                .iter()
-                .any(|pin| pin.net == Some(id) && gate.pin_width(&pin.name) != width)
-        }) {
-            anyhow::bail!(
-                "Width conflicts with connected pins. Disconnect or resize the components first."
-            );
-        }
-        self.editor.edit_module(|module| {
-            if let Some(net) = module.nets.iter_mut().find(|net| net.id == id) {
-                net.name = name;
-                net.width = width;
-                net.show_name = show;
-            }
-        })?;
-        Ok(())
-    }
-
-    fn set_dialog_error(&mut self, error: anyhow::Error) {
-        match &mut self.dialog {
-            Some(Dialog::Verilog { error: slot, .. } | Dialog::HdlInput { error: slot, .. }) => {
-                *slot = Some(format!("{error:#}"))
-            }
-            Some(Dialog::Input { error: slot, .. }) => *slot = Some(format!("{error:#}")),
-            Some(Dialog::Net(dialog)) => dialog.error = Some(format!("{error:#}")),
-            Some(Dialog::Memory { error: slot, .. }) => *slot = Some(format!("{error:#}")),
-            Some(Dialog::Terminal { error: slot, .. }) => *slot = Some(format!("{error:#}")),
-            Some(Dialog::Properties(dialog)) => dialog.error = Some(format!("{error:#}")),
-            Some(Dialog::NewModule { error: slot, .. }) => *slot = Some(format!("{error:#}")),
-            _ => self.error(error),
-        }
     }
 }

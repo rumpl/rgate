@@ -1,40 +1,121 @@
-//! Own a compile request independently of the UI and discard stale results.
-use crate::{
-    app::{GateApp, WorkspaceTab},
-    commands::Command,
-    live_simulation::LiveSimulation,
-};
-use gpui::{Context, Window};
+//! Owns Verilog background compilation, debounced source linting, and HDL diagnostics.
+use crate::commands::Command;
+use crate::hdl_diagnostics::HdlDiagnostic;
+#[cfg(not(target_family = "wasm"))]
+use crate::live_simulation::LiveSimulation;
+#[cfg(not(target_family = "wasm"))]
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
     mpsc,
 };
 
-pub struct Compilation {
+#[cfg(not(target_family = "wasm"))]
+struct Compilation {
     cancel: Arc<AtomicBool>,
     result: mpsc::Receiver<Result<LiveSimulation, rgate_sim::SimError>>,
     circuit: rgate_core::Circuit,
     command: Command,
 }
+
+#[cfg(not(target_family = "wasm"))]
 impl Drop for Compilation {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
 }
-impl GateApp {
-    pub fn start_compilation(&mut self, command: Command, cx: &mut Context<Self>) {
+
+#[cfg(not(target_family = "wasm"))]
+pub struct CompletedCompilation {
+    pub command: Command,
+    pub result: Result<LiveSimulation, rgate_sim::SimError>,
+}
+
+/// Self-contained component owning HDL diagnostics, background compilation, and debounced linting.
+#[derive(Default)]
+pub struct HdlCompiler {
+    #[cfg(not(target_family = "wasm"))]
+    compilation: Option<Compilation>,
+    #[cfg(not(target_family = "wasm"))]
+    lint_due: Option<std::time::Instant>,
+    #[cfg(not(target_family = "wasm"))]
+    lint_result: Option<(
+        rgate_core::Circuit,
+        mpsc::Receiver<Result<(), rgate_sim::SimError>>,
+    )>,
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pub background_compilation: bool,
+    pub diagnostics: Vec<HdlDiagnostic>,
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pub diagnostic_line: Option<u32>,
+}
+
+impl HdlCompiler {
+    pub fn is_compiling(&self) -> bool {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            self.compilation.is_some()
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            false
+        }
+    }
+
+    pub fn record_error_diagnostics(&mut self, message: &str) -> bool {
+        self.diagnostics = crate::hdl_diagnostics::parse(message);
+        !self.diagnostics.is_empty()
+    }
+
+    pub fn clear_diagnostics(&mut self) {
+        self.diagnostics.clear();
+    }
+
+    pub fn cancel(&mut self) -> bool {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            self.compilation.take().is_some()
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            false
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    pub fn schedule_lint(&mut self) {
+        self.diagnostics.clear();
+        self.lint_due = Some(std::time::Instant::now() + std::time::Duration::from_millis(350));
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    pub fn should_compile_in_background(
+        &self,
+        sim_active: bool,
+        circuit: &rgate_core::Circuit,
+        command: &Command,
+    ) -> bool {
+        self.background_compilation
+            && !sim_active
+            && circuit.modules.iter().any(|m| m.verilog.is_some())
+            && matches!(
+                command,
+                Command::PlayPause | Command::Step | Command::ClockStep
+            )
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    pub fn start(
+        &mut self,
+        circuit: rgate_core::Circuit,
+        root: String,
+        command: Command,
+    ) -> bool {
         if self.compilation.is_some() {
-            return;
+            return false;
         }
         self.lint_due = None;
         self.lint_result = None;
-        if let Err(error) = self.refresh_verilog_ports() {
-            self.error(error);
-            return;
-        }
-        let circuit = self.editor.circuit().clone();
-        let root = self.editor.active_module().to_owned();
         let cancel = Arc::new(AtomicBool::new(false));
         let token = cancel.clone();
         let snapshot = circuit.clone();
@@ -43,109 +124,51 @@ impl GateApp {
             let result = LiveSimulation::verilog_cancellable(&snapshot, &root, &token);
             let _ = sender.send(result);
         });
-        // Move compilation state into the UI only after the worker owns its snapshot.
         // Drop cancels compilation when the document changes or the window closes.
-        // The receiver is polled by the existing UI timer.
         self.compilation = Some(Compilation {
             cancel,
             result: receiver,
             circuit,
             command,
         });
-        self.running = false;
-        self.log("Compiling Verilog… Stop cancels.".into());
-        cx.notify();
+        true
     }
-    pub fn poll_compilation(&mut self, cx: &mut Context<Self>) {
-        let Some(pending) = &self.compilation else {
-            return;
-        };
+
+    #[cfg(not(target_family = "wasm"))]
+    pub fn poll_compile(&mut self, current_circuit: &rgate_core::Circuit) -> Option<CompletedCompilation> {
+        let pending = self.compilation.as_ref()?;
         let result = match pending.result.try_recv() {
             Ok(result) => result,
-            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Empty) => return None,
             Err(mpsc::TryRecvError::Disconnected) => Err(rgate_sim::SimError::Invalid(
                 "Compiler worker ended unexpectedly".into(),
             )),
         };
         let pending = self.compilation.take().unwrap();
-        if self.editor.circuit() != &pending.circuit {
-            return;
+        if current_circuit != &pending.circuit {
+            return None;
         }
-        match result {
-            Ok(mut sim) => {
-                for net in &self.probes {
-                    if let Err(error) = sim.probe(*net) {
-                        self.messages.push(error.to_string());
-                    }
-                }
-                self.hdl_diagnostics.clear();
-                self.debug_path = Some(sim.root_path().into());
-                self.simulation = Some(sim);
-                self.tab = WorkspaceTab::Simulate;
-                self.bottom_scope = true;
-                self.running = matches!(pending.command, Command::PlayPause);
-                self.restore_saved_probes();
-                if matches!(pending.command, Command::Step | Command::ClockStep) {
-                    let sim = self.simulation.as_mut().unwrap();
-                    let result = if matches!(pending.command, Command::Step) {
-                        sim.step()
-                    } else {
-                        sim.advance(sim.clock_period())
-                    };
-                    if let Err(error) = result {
-                        self.error(error);
-                    }
-                }
-                self.log("Verilog ready.".into());
-            }
-            Err(error) => self.error(error),
-        }
-        cx.notify();
+        Some(CompletedCompilation {
+            command: pending.command.clone(),
+            result,
+        })
     }
-    pub fn cancel_compilation(&mut self) {
-        if self.compilation.take().is_some() {
-            self.log("Compilation cancelled.".into());
-        }
-    }
-    pub fn compile_before_command(
-        &mut self,
-        command: &Command,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        if self.background_compilation
-            && self.simulation.is_none()
-            && self
-                .editor
-                .circuit()
-                .modules
-                .iter()
-                .any(|m| m.verilog.is_some())
-            && matches!(
-                command,
-                Command::PlayPause | Command::Step | Command::ClockStep
-            )
-        {
-            self.start_compilation(command.clone(), cx);
-            return true;
-        }
-        false
-    }
-}
 
-impl GateApp {
-    pub fn poll_source_check(&mut self, cx: &mut Context<Self>) {
+    /// Returns `true` if diagnostics changed and the UI should re-render.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn poll_lint(&mut self, current_circuit: &rgate_core::Circuit, sim_active: bool) -> bool {
+        let mut changed = false;
         if let Some((snapshot, receiver)) = &self.lint_result {
             match receiver.try_recv() {
                 Ok(result) => {
-                    let current = self.editor.circuit() == snapshot;
+                    let matches = current_circuit == snapshot;
                     self.lint_result = None;
-                    if current {
-                        self.hdl_diagnostics = match result {
+                    if matches {
+                        self.diagnostics = match result {
                             Ok(()) => Vec::new(),
                             Err(error) => crate::hdl_diagnostics::parse(&error.to_string()),
                         };
-                        cx.notify();
+                        changed = true;
                     }
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -155,14 +178,14 @@ impl GateApp {
             }
         }
         if self.lint_result.is_none()
-            && self.simulation.is_none()
+            && !sim_active
             && self.compilation.is_none()
             && self
                 .lint_due
                 .is_some_and(|due| std::time::Instant::now() >= due)
         {
             self.lint_due = None;
-            let snapshot = self.editor.circuit().clone();
+            let snapshot = current_circuit.clone();
             let sources = snapshot
                 .modules
                 .iter()
@@ -178,5 +201,6 @@ impl GateApp {
             });
             self.lint_result = Some((snapshot, receiver));
         }
+        changed
     }
 }

@@ -19,10 +19,8 @@ use gpui_component::{
     v_flex,
 };
 use gpui_kit_assets::IconName;
-use rgate_core::{Direction, Point};
+use rgate_core::Direction;
 use rgate_editor::Tool;
-
-const MESSAGE_HISTORY: usize = 30;
 
 impl GateApp {
     pub(super) fn workspace_tabs(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -33,7 +31,7 @@ impl GateApp {
         ];
         let muted = cx.theme().muted_foreground;
         let mut status = h_flex().gap_2().pr_2().text_xs();
-        if let Some(path) = &self.debug_path {
+        if let Some(path) = &self.sim.debug_path {
             if let Some((parent, _)) = path.rsplit_once('/') {
                 let parent = parent.to_owned();
                 status = status.child(
@@ -44,7 +42,8 @@ impl GateApp {
                         .label("Parent")
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if let Some(name) = this
-                                .simulation
+                                .sim
+                                .live
                                 .as_ref()
                                 .and_then(|sim| sim.scope_module(&parent))
                                 .map(ToOwned::to_owned)
@@ -54,7 +53,7 @@ impl GateApp {
                         })),
                 );
             }
-            if let Some(simulation) = &self.simulation {
+            if let Some(simulation) = &self.sim.live {
                 status = status.child(
                     div()
                         .text_color(muted)
@@ -62,14 +61,11 @@ impl GateApp {
                 );
             }
         }
-        #[cfg(not(target_family = "wasm"))]
-        let compiling = self.compilation.is_some();
-        #[cfg(target_family = "wasm")]
-        let compiling = false;
-        if compiling || self.simulation.is_some() {
+        let compiling = self.hdl.is_compiling();
+        if compiling || self.sim.is_active() {
             let state = if compiling {
                 "Compiling · Stop cancels"
-            } else if self.running {
+            } else if self.sim.running {
                 "Running"
             } else {
                 "Paused"
@@ -83,13 +79,13 @@ impl GateApp {
                     .rounded(px(3.0))
                     .bg(theme.secondary)
                     .child(
-                        Icon::new(if self.running {
+                        Icon::new(if self.sim.running {
                             IconName::Play
                         } else {
                             IconName::Pause
                         })
                         .small()
-                        .text_color(if self.running {
+                        .text_color(if self.sim.running {
                             theme.success
                         } else {
                             theme.foreground
@@ -101,7 +97,11 @@ impl GateApp {
         TabBar::new("workspace-tabs")
             .underline()
             .small()
-            .selected_index(TABS.iter().position(|tab| *tab == self.tab).unwrap_or(0))
+            .selected_index(
+                TABS.iter()
+                    .position(|tab| *tab == self.chrome.tab)
+                    .unwrap_or(0),
+            )
             .on_click(cx.listener(move |this, index: &usize, window, cx| {
                 this.set_tab(TABS[*index], window, cx)
             }))
@@ -126,7 +126,7 @@ impl GateApp {
 
     pub(super) fn schematic(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         #[cfg(not(target_family = "wasm"))]
-        if self.tab == WorkspaceTab::Edit && self.editor.module().verilog.is_some() {
+        if self.chrome.tab == WorkspaceTab::Edit && self.editor.module().verilog.is_some() {
             return self.source_editor(window, cx);
         }
         #[cfg(target_family = "wasm")]
@@ -151,28 +151,7 @@ impl GateApp {
             .child(
                 drawing(
                     move |bounds, _, cx| match entity.update(cx, |this, _| {
-                        let previous_size = this.canvas_bounds.size;
-                        this.canvas_bounds = bounds;
-                        // The browser canvas grows over several frames after startup; keep
-                        // refitting until the user moves the view themselves.
-                        if cfg!(target_family = "wasm")
-                            && previous_size != bounds.size
-                            && this.auto_fit.as_ref() == Some(&this.editor.viewport)
-                        {
-                            this.need_fit = true;
-                        }
-                        if this.need_fit {
-                            let content_bounds = this.editor.module().bounds();
-                            this.editor.viewport.fit(
-                                content_bounds,
-                                Point::new(
-                                    f32::from(bounds.size.width),
-                                    f32::from(bounds.size.height),
-                                ),
-                            );
-                            this.need_fit = false;
-                            this.auto_fit = Some(this.editor.viewport.clone());
-                        }
+                        this.canvas.update_bounds_and_fit(&mut this.editor, bounds);
                         this.scene()
                     }) {
                         Ok(scene) => scene,
@@ -307,25 +286,13 @@ impl GateApp {
     }
 
     fn message_log(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let start = self.messages.len().saturating_sub(MESSAGE_HISTORY);
-        let text = self.messages[start..].join("\n");
-        if self.message_log.read(cx).value().as_ref() != text {
-            let last_row = self.messages.len().saturating_sub(start + 1) as u32;
-            self.message_log.update(cx, |log, cx| {
-                log.set_value(text, window, cx);
-                log.set_cursor_position(
-                    gpui_component::input::Position::new(last_row, 0),
-                    window,
-                    cx,
-                );
-            });
-        }
+        self.console.sync_view(window, cx);
         div()
             .id("messages-content")
             .flex_1()
             .min_h_0()
             .child(
-                Textarea::new(&self.message_log)
+                Textarea::new(&self.console.log_view)
                     .readonly(true)
                     .bordered(false)
                     .small()
@@ -336,7 +303,7 @@ impl GateApp {
 
     pub(super) fn bottom_panel(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
-        let content = if self.bottom_scope {
+        let content = if self.chrome.bottom_scope {
             self.waveform_panel(window, cx)
         } else {
             self.message_log(window, cx)
@@ -347,9 +314,9 @@ impl GateApp {
                 TabBar::new("bottom-tabs")
                     .underline()
                     .xsmall()
-                    .selected_index(usize::from(self.bottom_scope))
+                    .selected_index(usize::from(self.chrome.bottom_scope))
                     .on_click(cx.listener(|this, index: &usize, _, cx| {
-                        this.bottom_scope = *index == 1;
+                        this.chrome.bottom_scope = *index == 1;
                         cx.notify();
                     }))
                     .child(
@@ -364,7 +331,7 @@ impl GateApp {
                     )
                     .suffix(div().pr_2().text_xs().text_color(muted).child(format!(
                         "Time: {} ns",
-                        self.simulation.as_ref().map_or(0, |sim| sim.time())
+                        self.sim.time()
                     ))),
             )
             .child(content)

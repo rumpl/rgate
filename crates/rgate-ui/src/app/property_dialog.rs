@@ -1,8 +1,8 @@
-use super::{Dialog, GateApp, NetDialog};
 use anyhow::{Context as _, Result};
 use gpui::{Context, Entity, Window};
 use gpui_component::input::InputState;
-use rgate_core::{Gate, GateId, GateKind, Module, Point, Signal};
+use rgate_core::{ComponentConfig, Gate, GateId, GateKind, Module, Point, Signal};
+use rgate_editor::Editor;
 
 pub struct PropertyDialog {
     pub gate: GateId,
@@ -35,54 +35,11 @@ pub struct PropertyDialog {
     pub error: Option<String>,
 }
 
-impl GateApp {
-    pub fn select_led_display(
-        &mut self,
-        mode: rgate_core::LedDisplay,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(Dialog::Properties(dialog)) = &mut self.dialog {
-            let connected = self
-                .editor
-                .module()
-                .gate(dialog.gate)
-                .is_some_and(|gate| gate.pins.iter().any(|pin| pin.net.is_some()));
-            dialog.led_display = mode;
-            if !connected {
-                dialog.width.update(cx, |field, cx| {
-                    field.set_value(mode.recommended_width().to_string(), window, cx)
-                });
-            }
-            dialog.error = None;
-        }
-        cx.notify();
-    }
-
-    pub fn show_properties(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(net) = self.editor.selected_net {
-            if let Some(definition) = self.editor.module().net(net) {
-                let name = crate::input::text_field(&definition.name, window, cx);
-                self.dialog = Some(Dialog::Net(Box::new(NetDialog {
-                    net,
-                    name,
-                    width: crate::input::text_field(definition.width.to_string(), window, cx),
-                    show_name: definition.show_name,
-                    error: None,
-                })));
-            }
-            return;
-        }
-        let Some(id) = self.editor.selection.iter().next().copied() else {
-            self.log("Select a gate first; module ports are edited in the Interface tab.".into());
-            return;
-        };
-        let Some(gate) = self.editor.module().gate(id) else {
-            return;
-        };
+impl PropertyDialog {
+    pub fn from_gate<T: 'static>(gate: &Gate, window: &mut Window, cx: &mut Context<T>) -> Self {
         let name = crate::input::text_field(&gate.name, window, cx);
-        self.dialog = Some(Dialog::Properties(Box::new(PropertyDialog {
-            gate: id,
+        Self {
+            gate: gate.id,
             name,
             value: crate::input::text_field(gate.initial.display_value(), window, cx),
             delay: crate::input::text_field(gate.delay.to_string(), window, cx),
@@ -149,74 +106,76 @@ impl GateApp {
             ),
             memory: crate::input::text_field(format_gate_memory(gate), window, cx),
             error: None,
-        })));
-        self.running = false;
+        }
     }
 
-    pub(super) fn apply_annotation_properties(
+    pub fn select_led_display<T: 'static>(
         &mut self,
-        id: GateId,
-        name: String,
-        frame_width_raw: &str,
-        frame_height_raw: &str,
-        title: String,
-        show_name: bool,
-    ) -> Result<()> {
-        if name.is_empty() {
-            anyhow::bail!("Name must not be empty.");
+        mode: rgate_core::LedDisplay,
+        connected: bool,
+        window: &mut Window,
+        cx: &mut Context<T>,
+    ) {
+        self.led_display = mode;
+        if !connected {
+            self.width.update(cx, |field, cx| {
+                field.set_value(mode.recommended_width().to_string(), window, cx)
+            });
         }
-        let is_frame = self.editor.module().gate(id).unwrap().kind == GateKind::Frame;
-        let dimensions = if is_frame {
-            let width: f32 = frame_width_raw
-                .parse()
-                .context("Frame width must be numeric.")?;
-            let height: f32 = frame_height_raw
-                .parse()
-                .context("Frame height must be numeric.")?;
-            if !width.is_finite()
-                || !height.is_finite()
-                || !(20.0..=10000.0).contains(&width)
-                || !(20.0..=10000.0).contains(&height)
-            {
-                anyhow::bail!("Frame dimensions must be between 20 and 10000.");
-            }
-            Some((width, height))
-        } else {
-            None
-        };
-        self.editor.edit_module(|module| {
-            let gate = module.gate_mut(id).expect("selected annotation exists");
-            gate.name = name;
-            gate.text = title;
-            gate.show_name = show_name;
-            if let Some((width, height)) = dimensions {
-                gate.config.frame_width = width;
-                gate.config.frame_height = height;
-            }
-        })?;
+        self.error = None;
+    }
+
+    pub fn apply_memory_image<T: 'static>(
+        &mut self,
+        image: &str,
+        window: &mut Window,
+        cx: &mut Context<T>,
+    ) -> Result<()> {
+        let width = self.width.read(cx).value().parse()?;
+        let address_bits = self.address_bits.read(cx).value().parse()?;
+        let words =
+            rgate_core::parse_sparse_memory(image, width, address_bits).map_err(anyhow::Error::msg)?;
+        let contents = words
+            .iter()
+            .map(|(address, word)| {
+                format!(
+                    "@{address:X} {}",
+                    word.to_biguint()
+                        .map(|value| value.to_str_radix(16))
+                        .unwrap_or_else(|| "x".into())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.memory
+            .update(cx, |field, cx| field.set_value(contents, window, cx));
         Ok(())
     }
 
-    pub(super) fn apply_gate_properties(&mut self, cx: &Context<Self>) -> Result<()> {
-        let Some(Dialog::Properties(dialog)) = self.dialog.as_ref() else {
-            return Ok(());
-        };
-        let id = dialog.gate;
-        let name = dialog.name.read(cx).value().trim().to_owned();
+    pub fn apply_to_editor<T: 'static>(
+        &self,
+        editor: &mut Editor,
+        cx: &Context<T>,
+    ) -> Result<()> {
+        let id = self.gate;
+        let name = self.name.read(cx).value().trim().to_owned();
         if name.is_empty() {
             anyhow::bail!("Name must not be empty.");
         }
-        let gate = self
-            .editor
+        let gate = editor
             .module()
             .gate(id)
             .context("Selected gate no longer exists.")?;
-        let fields = crate::properties::fields(&gate.kind);
 
-        let width = parse_gate_width(dialog, gate, fields.width, cx)?;
+        if matches!(gate.kind, GateKind::Frame | GateKind::Comment) {
+            return self.apply_annotation(editor, id, name, gate.kind == GateKind::Frame, cx);
+        }
+
+        let fields = crate::properties::fields(&gate.kind);
+        let width = self.parse_width(gate, fields.width, cx)?;
         let port_only = gate.kind.port_direction().is_some()
             && gate.pin("P").and_then(|p| p.net).is_some_and(|net_id| {
-                self.editor
+                editor
                     .module()
                     .gates
                     .iter()
@@ -230,7 +189,7 @@ impl GateApp {
         }
 
         let value = if fields.initial {
-            let value = dialog.value.read(cx).value().to_string();
+            let value = self.value.read(cx).value().to_string();
             if let Some(hex) = value.strip_prefix("0x") {
                 Signal::parse(hex, width, 16)
             } else {
@@ -241,8 +200,7 @@ impl GateApp {
             gate.initial.resized(width)
         };
         let delay = if fields.delay {
-            dialog
-                .delay
+            self.delay
                 .read(cx)
                 .value()
                 .parse()
@@ -251,8 +209,7 @@ impl GateApp {
             gate.delay
         };
         let period = if fields.clock {
-            dialog
-                .period
+            self.period
                 .read(cx)
                 .value()
                 .parse()
@@ -261,8 +218,7 @@ impl GateApp {
             gate.period
         };
         let inputs = if fields.count {
-            dialog
-                .inputs
+            self.inputs
                 .read(cx)
                 .value()
                 .parse()
@@ -271,7 +227,7 @@ impl GateApp {
             gate.input_count
         };
 
-        let config = parse_gate_config(dialog, gate, width, fields.clock, cx)?;
+        let config = self.parse_config(gate, width, fields.clock, cx)?;
         if gate.pins.iter().any(|pin| pin.net.is_some())
             && (config.partitions != gate.config.partitions
                 || config.tap_offset != gate.config.tap_offset
@@ -288,8 +244,8 @@ impl GateApp {
 
         let comment = gate.text.clone();
         let old_gate = gate.clone();
-        let show_name = dialog.show_name;
-        self.editor.edit_module(|module| {
+        let show_name = self.show_name;
+        editor.edit_module(|module| {
             if let Some(gate) = module.gate_mut(id) {
                 gate.name = name;
                 gate.width = width;
@@ -328,6 +284,171 @@ impl GateApp {
         })?;
         Ok(())
     }
+
+    fn apply_annotation<T: 'static>(
+        &self,
+        editor: &mut Editor,
+        id: GateId,
+        name: String,
+        is_frame: bool,
+        cx: &Context<T>,
+    ) -> Result<()> {
+        let dimensions = if is_frame {
+            let width: f32 = self
+                .frame_width
+                .read(cx)
+                .value()
+                .parse()
+                .context("Frame width must be numeric.")?;
+            let height: f32 = self
+                .frame_height
+                .read(cx)
+                .value()
+                .parse()
+                .context("Frame height must be numeric.")?;
+            if !width.is_finite()
+                || !height.is_finite()
+                || !(20.0..=10000.0).contains(&width)
+                || !(20.0..=10000.0).contains(&height)
+            {
+                anyhow::bail!("Frame dimensions must be between 20 and 10000.");
+            }
+            Some((width, height))
+        } else {
+            None
+        };
+        let title = self.comment.read(cx).value().replace("\\n", "\n");
+        let show_name = self.show_name;
+        editor.edit_module(|module| {
+            let gate = module.gate_mut(id).expect("selected annotation exists");
+            gate.name = name;
+            gate.text = title;
+            gate.show_name = show_name;
+            if let Some((width, height)) = dimensions {
+                gate.config.frame_width = width;
+                gate.config.frame_height = height;
+            }
+        })?;
+        Ok(())
+    }
+
+    fn parse_width<T: 'static>(
+        &self,
+        gate: &Gate,
+        has_width: bool,
+        cx: &Context<T>,
+    ) -> Result<u16> {
+        if !has_width {
+            return Ok(gate.width);
+        }
+        let width: u16 = self
+            .width
+            .read(cx)
+            .value()
+            .parse()
+            .context("Width must be a number from 1 to 4096.")?;
+        if !(1..=4096).contains(&width) {
+            anyhow::bail!("Width must be from 1 to 4096.");
+        }
+        Ok(width)
+    }
+
+    fn parse_config<T: 'static>(
+        &self,
+        gate: &Gate,
+        width: u16,
+        has_clock: bool,
+        cx: &Context<T>,
+    ) -> Result<ComponentConfig> {
+        let mut config = gate.config.clone();
+        if gate.kind == GateKind::Led {
+            config.led_display = self.led_display;
+        }
+        if gate.kind == GateKind::Tty {
+            config.tty_tkgate = self.tty_tkgate;
+        }
+        if gate.kind.is_logic() {
+            config.reduction = self.reduction;
+        }
+        if gate.kind == GateKind::TriState {
+            config.enable_low = self.enable_low;
+            config.invert_output = self.invert_output;
+        }
+        if has_clock {
+            config.clock_phase = self
+                .phase
+                .read(cx)
+                .value()
+                .parse()
+                .context("Phase must be nonnegative nanoseconds.")?;
+            config.clock_duty = self
+                .duty
+                .read(cx)
+                .value()
+                .parse()
+                .context("Duty must be 1–99 percent.")?;
+        }
+        if matches!(gate.kind, GateKind::Module(_)) {
+            config.module_width = self
+                .module_width
+                .read(cx)
+                .value()
+                .parse()
+                .context("Module width must be numeric")?;
+            config.custom_ports = serde_json::from_str(&self.custom_ports.read(cx).value())
+                .context("Port positions must be JSON: {\"A\":{\"x\":-50,\"y\":0}}")?;
+            for name in config.custom_ports.keys() {
+                if gate.pin(name).is_none() {
+                    anyhow::bail!("Unknown port {name}");
+                }
+            }
+        }
+        if matches!(gate.kind, GateKind::Multiply | GateKind::Divide) {
+            config.operand_a_width = Some(self.operand_a.read(cx).value().parse()?);
+            config.operand_b_width = Some(self.operand_b.read(cx).value().parse()?);
+        }
+        if matches!(gate.kind, GateKind::Concat | GateKind::Splitter) {
+            config.partitions = self
+                .partitions
+                .read(cx)
+                .value()
+                .split(',')
+                .filter(|part| !part.trim().is_empty())
+                .map(|part| part.trim().parse::<u16>())
+                .collect::<Result<Vec<_>, _>>()
+                .context("Partitions must be comma-separated widths.")?;
+        }
+        if gate.kind == GateKind::Tap {
+            config.tap_offset = self
+                .tap_offset
+                .read(cx)
+                .value()
+                .parse()
+                .context("Tap offset must be a number.")?;
+            config.tap_width = self
+                .tap_width
+                .read(cx)
+                .value()
+                .parse()
+                .context("Tap width must be a number.")?;
+        }
+        if matches!(gate.kind, GateKind::Ram | GateKind::Rom) {
+            config.address_bits = self
+                .address_bits
+                .read(cx)
+                .value()
+                .parse()
+                .context("Address bits must be 1–32.")?;
+            config.sparse_memory = rgate_core::parse_sparse_memory(
+                &self.memory.read(cx).value(),
+                width,
+                config.address_bits,
+            )
+            .map_err(anyhow::Error::msg)?;
+            config.memory.clear();
+        }
+        Ok(config)
+    }
 }
 
 fn format_gate_memory(gate: &Gate) -> String {
@@ -352,124 +473,6 @@ fn format_gate_memory(gate: &Gate) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-fn parse_gate_width(
-    dialog: &PropertyDialog,
-    gate: &Gate,
-    has_width: bool,
-    cx: &Context<GateApp>,
-) -> Result<u16> {
-    if !has_width {
-        return Ok(gate.width);
-    }
-    let width: u16 = dialog
-        .width
-        .read(cx)
-        .value()
-        .parse()
-        .context("Width must be a number from 1 to 4096.")?;
-    if !(1..=4096).contains(&width) {
-        anyhow::bail!("Width must be from 1 to 4096.");
-    }
-    Ok(width)
-}
-
-fn parse_gate_config(
-    dialog: &PropertyDialog,
-    gate: &Gate,
-    width: u16,
-    has_clock: bool,
-    cx: &Context<GateApp>,
-) -> Result<rgate_core::ComponentConfig> {
-    let mut config = gate.config.clone();
-    if gate.kind == GateKind::Led {
-        config.led_display = dialog.led_display;
-    }
-    if gate.kind == GateKind::Tty {
-        config.tty_tkgate = dialog.tty_tkgate;
-    }
-    if gate.kind.is_logic() {
-        config.reduction = dialog.reduction;
-    }
-    if gate.kind == GateKind::TriState {
-        config.enable_low = dialog.enable_low;
-        config.invert_output = dialog.invert_output;
-    }
-    if has_clock {
-        config.clock_phase = dialog
-            .phase
-            .read(cx)
-            .value()
-            .parse()
-            .context("Phase must be nonnegative nanoseconds.")?;
-        config.clock_duty = dialog
-            .duty
-            .read(cx)
-            .value()
-            .parse()
-            .context("Duty must be 1–99 percent.")?;
-    }
-    if matches!(gate.kind, GateKind::Module(_)) {
-        config.module_width = dialog
-            .module_width
-            .read(cx)
-            .value()
-            .parse()
-            .context("Module width must be numeric")?;
-        config.custom_ports = serde_json::from_str(&dialog.custom_ports.read(cx).value())
-            .context("Port positions must be JSON: {\"A\":{\"x\":-50,\"y\":0}}")?;
-        for name in config.custom_ports.keys() {
-            if gate.pin(name).is_none() {
-                anyhow::bail!("Unknown port {name}");
-            }
-        }
-    }
-    if matches!(gate.kind, GateKind::Multiply | GateKind::Divide) {
-        config.operand_a_width = Some(dialog.operand_a.read(cx).value().parse()?);
-        config.operand_b_width = Some(dialog.operand_b.read(cx).value().parse()?);
-    }
-    if matches!(gate.kind, GateKind::Concat | GateKind::Splitter) {
-        config.partitions = dialog
-            .partitions
-            .read(cx)
-            .value()
-            .split(',')
-            .filter(|part| !part.trim().is_empty())
-            .map(|part| part.trim().parse::<u16>())
-            .collect::<Result<Vec<_>, _>>()
-            .context("Partitions must be comma-separated widths.")?;
-    }
-    if gate.kind == GateKind::Tap {
-        config.tap_offset = dialog
-            .tap_offset
-            .read(cx)
-            .value()
-            .parse()
-            .context("Tap offset must be a number.")?;
-        config.tap_width = dialog
-            .tap_width
-            .read(cx)
-            .value()
-            .parse()
-            .context("Tap width must be a number.")?;
-    }
-    if matches!(gate.kind, GateKind::Ram | GateKind::Rom) {
-        config.address_bits = dialog
-            .address_bits
-            .read(cx)
-            .value()
-            .parse()
-            .context("Address bits must be 1–32.")?;
-        config.sparse_memory = rgate_core::parse_sparse_memory(
-            &dialog.memory.read(cx).value(),
-            width,
-            config.address_bits,
-        )
-        .map_err(anyhow::Error::msg)?;
-        config.memory.clear();
-    }
-    Ok(config)
 }
 
 fn reattach_gate_wires(module: &mut Module, id: GateId) {

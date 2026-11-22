@@ -277,69 +277,127 @@ fn state_directory() -> PathBuf {
     }
 }
 
-impl GateApp {
-    pub fn workspace_key_public(&self) -> String {
-        self.workspace_key()
-    }
-    fn workspace_key(&self) -> String {
-        if let Some(path) = &self.file {
+/// Owns workspace persistence and per-module / per-instance viewport memory.
+#[derive(Default)]
+pub struct WorkspaceStore {
+    pub persistence: Option<Persistence>,
+    pub views: BTreeMap<String, ViewState>,
+}
+
+impl WorkspaceStore {
+    pub fn document_key(file: Option<&PathBuf>, circuit: &Circuit) -> String {
+        if let Some(path) = file {
             format!("file:{}", path.to_string_lossy())
         } else {
-            format!(
-                "untitled:{}:{}",
-                self.editor.circuit().root,
-                self.editor.circuit().title
-            )
+            format!("untitled:{}:{}", circuit.root, circuit.title)
         }
     }
-    fn view_key(&self) -> String {
-        self.debug_path
-            .as_ref()
+
+    pub fn view_key(debug_path: Option<&str>, active_module: &str) -> String {
+        debug_path
             .map(|path| format!("instance:{path}"))
-            .unwrap_or_else(|| format!("module:{}", self.editor.active_module()))
+            .unwrap_or_else(|| format!("module:{active_module}"))
     }
-    pub fn remember_view(&mut self) {
-        let key = self.view_key();
-        self.workspace_views.insert(
+
+    pub fn remember_view(
+        &mut self,
+        debug_path: Option<&str>,
+        active_module: &str,
+        viewport: &Viewport,
+    ) {
+        let key = Self::view_key(debug_path, active_module);
+        self.views.insert(
             key,
             ViewState {
-                zoom: self.editor.viewport.zoom,
-                pan: self.editor.viewport.pan,
+                zoom: viewport.zoom,
+                pan: viewport.pan,
             },
         );
     }
-    pub fn restore_view(&mut self) {
-        if let Some(view) = self.workspace_views.get(&self.view_key()) {
-            self.editor.viewport = Viewport {
+
+    /// Restores the saved viewport for the current scope. Returns `true` if restored,
+    /// `false` if the caller should auto-fit.
+    pub fn restore_view(
+        &self,
+        debug_path: Option<&str>,
+        active_module: &str,
+        viewport: &mut Viewport,
+    ) -> bool {
+        if let Some(view) = self.views.get(&Self::view_key(debug_path, active_module)) {
+            *viewport = Viewport {
                 zoom: view.zoom,
                 pan: view.pan,
             };
-            self.need_fit = false;
+            true
         } else {
-            self.need_fit = true;
+            false
         }
     }
+
+    pub fn saved_document(&self, key: &str) -> Option<DocumentWorkspace> {
+        self.persistence
+            .as_ref()
+            .and_then(|store| store.preferences.documents.get(key).cloned())
+    }
+
+    pub fn tick_ready(&mut self) -> bool {
+        let Some(store) = &mut self.persistence else {
+            return false;
+        };
+        store.ticks = store.ticks.wrapping_add(1);
+        if store.ticks < 50 {
+            return false;
+        }
+        store.ticks = 0;
+        true
+    }
+}
+
+impl GateApp {
+    pub fn workspace_key_public(&self) -> String {
+        WorkspaceStore::document_key(self.file.as_ref(), self.editor.circuit())
+    }
+
+    pub fn remember_view(&mut self) {
+        self.workspace.remember_view(
+            self.sim.debug_path.as_deref(),
+            self.editor.active_module(),
+            &self.editor.viewport,
+        );
+    }
+
+    pub fn restore_view(&mut self) {
+        let active_module = self.editor.active_module().to_owned();
+        let restored = self.workspace.restore_view(
+            self.sim.debug_path.as_deref(),
+            &active_module,
+            &mut self.editor.viewport,
+        );
+        self.canvas.need_fit = !restored;
+    }
+
     pub fn capture_workspace(&mut self) -> DocumentWorkspace {
         self.remember_view();
         DocumentWorkspace {
             active_module: self.editor.active_module().into(),
-            debug_path: self.debug_path.clone(),
-            views: self.workspace_views.clone(),
-            collapsed: self.collapsed_modules.iter().cloned().collect(),
-            probes: self.saved_probes.clone(),
-            waveform: self.waveform.clone(),
+            debug_path: self.sim.debug_path.clone(),
+            views: self.workspace.views.clone(),
+            collapsed: self.chrome.collapsed_modules.iter().cloned().collect(),
+            probes: self.sim.saved_probes.clone(),
+            waveform: self.waveform.settings.clone(),
         }
     }
+
     pub fn apply_workspace(&mut self, workspace: DocumentWorkspace) {
-        self.workspace_views = workspace
+        self.workspace.views = workspace
             .views
             .into_iter()
             .filter(|(_, view)| view.zoom.is_finite() && view.pan.is_finite())
             .collect();
-        self.collapsed_modules = workspace.collapsed.into_iter().collect();
-        self.saved_probes = workspace.probes;
-        self.waveform = workspace.waveform;
-        self.waveform.sanitize();
+        self.chrome.collapsed_modules = workspace.collapsed.into_iter().collect();
+        self.sim.saved_probes = workspace.probes;
+        self.waveform.settings = workspace.waveform;
+        self.waveform.settings.sanitize();
         if self
             .editor
             .circuit()
@@ -349,88 +407,75 @@ impl GateApp {
             let _ = self.editor.switch_module(&workspace.active_module);
         }
         // Restore the view only; never auto-run or pretend volatile CPU state was saved.
-        self.debug_path = None;
+        self.sim.debug_path = None;
         if let Some(path) = workspace.debug_path
             && let Some(view) = self
-                .workspace_views
+                .workspace
+                .views
                 .get(&format!("instance:{path}"))
                 .cloned()
         {
-            self.workspace_views
+            self.workspace
+                .views
                 .insert(format!("module:{}", self.editor.active_module()), view);
         }
         self.restore_view();
     }
+
     pub fn enable_persistence(&mut self, cx: &mut UiContext<Self>) {
         let store = Persistence::load();
         let prefs = &store.preferences;
         self.theme = prefs.theme;
         self.appearance = prefs.appearance;
         crate::view::apply_appearance(prefs.appearance, None, cx);
-        self.sidebar_width = prefs.sidebar_width;
-        self.components_width = prefs.components_width;
-        self.modules_height = prefs.modules_height;
-        self.bottom_height = prefs.bottom_height;
+        self.chrome.apply_preferences(prefs);
         self.editor.show_grid = prefs.show_grid;
         self.editor.snap = prefs.snap;
         self.editor.grid = prefs.grid;
-        self.bottom_scope = prefs.bottom_scope;
-        self.module_list = prefs.module_list;
-        self.nets_ports = prefs.nets_ports;
-        if let Some(workspace) = prefs.documents.get(&self.workspace_key()) {
+        if let Some(workspace) = prefs.documents.get(&self.workspace_key_public()) {
             self.apply_workspace(workspace.clone());
         }
         if let Some(error) = &store.error {
             self.log(error.clone());
         }
         if store.recovery.is_some() {
-            self.dialog = Some(Dialog::Recovery);
+            self.dialogs.show(Dialog::Recovery);
         }
-        self.persistence = Some(store);
+        self.workspace.persistence = Some(store);
         cx.notify();
     }
+
     pub fn persistence_tick(&mut self) {
-        if let Some(store) = &mut self.persistence {
-            store.ticks = store.ticks.wrapping_add(1);
-            if store.ticks < 50 {
-                return;
-            }
-            store.ticks = 0;
-        } else {
+        if !self.workspace.tick_ready() {
             return;
         }
-        if self.drag.is_none()
+        if self.canvas.drag.is_none()
             && self.editor.draft.is_none()
             && !self.prompting
-            && !matches!(self.dialog, Some(Dialog::Recovery))
+            && !self.dialogs.is_recovery()
         {
             self.flush_workspace();
         }
     }
+
     pub fn flush_workspace(&mut self) {
-        if matches!(self.dialog, Some(Dialog::Recovery)) {
+        if self.dialogs.is_recovery() {
             return;
         }
-        let Some(mut store) = self.persistence.take() else {
+        let Some(mut store) = self.workspace.persistence.take() else {
             return;
         };
         let workspace = self.capture_workspace();
         let mut preferences = store.preferences.clone();
         preferences.theme = self.theme;
         preferences.appearance = self.appearance;
-        preferences.sidebar_width = self.sidebar_width;
-        preferences.components_width = self.components_width;
-        preferences.modules_height = self.modules_height;
-        preferences.bottom_height = self.bottom_height;
+        self.chrome.write_preferences(&mut preferences);
         preferences.show_grid = self.editor.show_grid;
         preferences.snap = self.editor.snap;
         preferences.grid = self.editor.grid;
-        preferences.bottom_scope = self.bottom_scope;
-        preferences.module_list = self.module_list;
-        preferences.nets_ports = self.nets_ports;
         preferences
             .documents
-            .insert(self.workspace_key(), workspace.clone());
+            .insert(self.workspace_key_public(), workspace.clone());
         while preferences.documents.len() > 32 {
             let key = preferences.documents.keys().next().unwrap().clone();
             preferences.documents.remove(&key);
@@ -450,10 +495,12 @@ impl GateApp {
         } else {
             store.error = None;
         }
-        self.persistence = Some(store);
+        self.workspace.persistence = Some(store);
     }
+
     pub fn restore_recovery(&mut self, window: &mut Window, cx: &mut UiContext<Self>) {
         let Some(recovery) = self
+            .workspace
             .persistence
             .as_ref()
             .and_then(|store| store.recovery.clone())
@@ -466,13 +513,10 @@ impl GateApp {
                 editor.mark_recovered();
                 self.editor = editor;
                 self.file = recovery.file;
-                self.simulation = None;
-                self.running = false;
-                self.probes.clear();
-                self.debug_path = None;
-                self.tab = WorkspaceTab::Edit;
+                self.sim.reset();
+                self.chrome.tab = WorkspaceTab::Edit;
                 self.apply_workspace(recovery.workspace);
-                self.dialog = None;
+                self.dialogs.close();
                 self.log("Recovered unsaved circuit. Save it to keep these changes.".into());
                 self.focus.focus(window, cx);
                 cx.notify();
@@ -480,45 +524,15 @@ impl GateApp {
             Err(error) => self.log(format!("Recovery failed: {error}")),
         }
     }
+
     pub fn discard_recovery(&mut self, window: &mut Window, cx: &mut UiContext<Self>) {
-        if let Some(store) = &mut self.persistence
+        if let Some(store) = &mut self.workspace.persistence
             && let Err(error) = store.clear_recovery()
         {
             self.log(format!("Could not discard recovery: {error:#}"));
         }
-        self.dialog = None;
+        self.dialogs.close();
         self.focus.focus(window, cx);
         cx.notify();
-    }
-    pub fn restore_saved_probes(&mut self) {
-        let Some(sim) = &mut self.simulation else {
-            return;
-        };
-        self.saved_probes.retain(|probe| {
-            if probe.root != sim.root_path() {
-                return true;
-            }
-            let Some(name) = sim.scope_module(&probe.path) else {
-                return false;
-            };
-            let Some(module) = self.editor.circuit().module(name) else {
-                return false;
-            };
-            let Some(net) = module.nets.iter().find(|net| net.name == probe.net) else {
-                return false;
-            };
-            let Some(actual) = sim.scoped_net(&probe.path, net.id) else {
-                return false;
-            };
-            if probe.root != sim.root_path() {
-                return true;
-            }
-            if sim.probe(actual).is_err() {
-                return false;
-            }
-            sim.label_probe(actual, format!("{}/{}", probe.path, probe.net));
-            self.probes.insert(actual);
-            true
-        });
     }
 }

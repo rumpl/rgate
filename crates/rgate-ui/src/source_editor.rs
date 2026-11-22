@@ -77,13 +77,11 @@ impl GateApp {
             let name = module.clone();
             let subscription = cx.subscribe(&input, move |this, input, event, cx| {
                 if matches!(event, InputEvent::Change)
-                    && this.simulation.is_none()
+                    && !this.sim.is_active()
                     && this.editor.active_module() == name
                 {
                     let source = input.read(cx).value().to_string();
-                    this.hdl_diagnostics.clear();
-                    this.lint_due =
-                        Some(std::time::Instant::now() + std::time::Duration::from_millis(350));
+                    this.hdl.schedule_lint();
                     if let Err(error) = this
                         .editor
                         .edit_module(|module| module.verilog = Some(source))
@@ -108,7 +106,8 @@ impl GateApp {
             input.update(cx, |editor, cx| editor.set_value(source, window, cx));
         }
         let diagnostics = self
-            .hdl_diagnostics
+            .hdl
+            .diagnostics
             .iter()
             .filter(|d| d.module == self.editor.active_module())
             .cloned()
@@ -134,7 +133,7 @@ impl GateApp {
                     );
                 }
             }
-            if let Some(line) = self.diagnostic_line.take() {
+            if let Some(line) = self.hdl.diagnostic_line.take() {
                 state.set_cursor_position(
                     gpui_component::input::Position::new(line.saturating_sub(1), 0),
                     window,
@@ -186,7 +185,7 @@ impl GateApp {
                     .child(
                         Editor::new(&input)
                             .h(gpui::relative(1.0))
-                            .readonly(self.simulation.is_some()),
+                            .readonly(self.sim.is_active()),
                     ),
             )
             .into_any_element()

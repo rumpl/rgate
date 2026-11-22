@@ -1,87 +1,101 @@
 use super::{GateApp, WorkspaceTab};
 #[cfg(not(target_family = "wasm"))]
 use crate::commands::Command;
-use crate::live_simulation::LiveSimulation;
 use gpui::{Context, Window};
-use rgate_core::{GateId, GateKind, NetId, Point, Signal};
+use rgate_core::NetId;
 use rgate_editor::Tool;
-use rgate_sim::Simulator;
 
 impl GateApp {
-    pub fn advance_running(&mut self, cx: &mut Context<Self>) {
-        if let Some(simulator) = &mut self.simulation {
-            let quantum = simulator.clock_period().clamp(10, 1000);
-            if let Err(error) = simulator.advance(quantum) {
-                self.running = false;
-                self.log(format!("Simulation error: {error}"));
+    #[cfg(not(target_family = "wasm"))]
+    pub(super) fn poll_hdl_tasks(&mut self, cx: &mut Context<Self>) {
+        if let Some(completed) = self.hdl.poll_compile(self.editor.circuit()) {
+            match completed.result {
+                Ok(sim) => {
+                    let warnings = self.sim.attach(sim, self.editor.circuit());
+                    for warning in warnings {
+                        self.console.push_raw(warning);
+                    }
+                    self.hdl.clear_diagnostics();
+                    self.chrome.tab = WorkspaceTab::Simulate;
+                    self.chrome.bottom_scope = true;
+                    self.sim.running = matches!(completed.command, Command::PlayPause);
+                    if matches!(completed.command, Command::Step | Command::ClockStep)
+                        && let Err(error) =
+                            self.sim.step(matches!(completed.command, Command::ClockStep))
+                    {
+                        self.error(error);
+                    }
+                    self.log("Verilog ready.".into());
+                }
+                Err(error) => self.error(error),
             }
+            cx.notify();
+        }
+        if self
+            .hdl
+            .poll_lint(self.editor.circuit(), self.sim.is_active())
+        {
+            cx.notify();
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    pub fn start_compilation(&mut self, command: Command, cx: &mut Context<Self>) {
+        if self.hdl.is_compiling() {
+            return;
+        }
+        if let Err(error) = crate::verilog_editor::refresh_ports(&mut self.editor) {
+            self.error(error);
+            return;
+        }
+        if self.hdl.start(
+            self.editor.circuit().clone(),
+            self.editor.active_module().to_owned(),
+            command,
+        ) {
+            self.sim.pause();
+            self.log("Compiling Verilog… Stop cancels.".into());
+            cx.notify();
+        }
+    }
+
+    pub fn advance_running(&mut self, cx: &mut Context<Self>) {
+        if let Err(error) = self.sim.advance_running() {
+            self.log(format!("Simulation error: {error}"));
         }
         cx.notify();
     }
 
-    pub fn held_reset_input(&self) -> Option<(GateId, NetId)> {
-        let sim = self.simulation.as_ref()?;
-        let root = sim.module();
-        let net = root.nets.iter().find(|net| net.name == "RESET_N")?;
-        if sim.value(net.id)?.to_u64() != Some(0) {
-            return None;
-        }
-        let gate = root.gates.iter().find(|gate| {
-            gate.kind == GateKind::Switch
-                && gate.pin("Z").is_some_and(|pin| pin.net == Some(net.id))
-        })?;
-        Some((gate.id, net.id))
-    }
-
     pub fn release_terminal_reset(&mut self, cx: &mut Context<Self>) {
-        if let Some((id, _)) = self.held_reset_input()
-            && let Some(sim) = &mut self.simulation
-            && let Err(error) = sim.set_input(id, Signal::from_u64(1, 1))
-        {
+        if let Err(error) = self.sim.release_terminal_reset() {
             self.error(error);
         }
         cx.notify();
     }
 
     pub fn ensure_simulator(&mut self) -> bool {
-        if self.simulation.is_some() {
+        if self.sim.is_active() {
             return true;
         }
-        if let Err(error) = self.refresh_verilog_ports() {
+        if let Err(error) = crate::verilog_editor::refresh_ports(&mut self.editor) {
             self.error(error);
             return false;
         }
-        let result: Result<LiveSimulation, rgate_sim::SimError> = if self
-            .editor
-            .circuit()
-            .modules
-            .iter()
-            .any(|m| m.verilog.is_some())
+        self.remember_view();
+        match self
+            .sim
+            .ensure_started(self.editor.circuit(), self.editor.active_module())
         {
-            LiveSimulation::verilog(self.editor.circuit(), self.editor.active_module())
-        } else {
-            Simulator::from_circuit(self.editor.circuit(), self.editor.active_module())
-                .map(Into::into)
-        };
-        match result {
-            Ok(mut simulator) => {
-                self.hdl_diagnostics.clear();
-                for net in &self.probes {
-                    if let Err(error) = simulator.probe(*net) {
-                        self.messages.push(error.to_string());
-                    }
+            Ok(Some(messages)) => {
+                self.hdl.clear_diagnostics();
+                for message in messages {
+                    self.console.push_raw(message);
                 }
-                for warning in simulator.warnings() {
-                    self.messages.push(warning.clone());
-                }
-                self.remember_view();
-                self.debug_path = Some(simulator.root_path().into());
-                self.simulation = Some(simulator);
-                self.restore_saved_probes();
                 self.remember_view();
                 self.editor.set_tool(Tool::Select);
                 true
             }
+            Ok(None) => true,
             Err(error) => {
                 self.error(error);
                 false
@@ -89,114 +103,59 @@ impl GateApp {
         }
     }
 
-    pub fn simulation_net(&self, net: NetId) -> Option<NetId> {
-        self.simulation
-            .as_ref()?
-            .scoped_net(self.debug_path.as_deref()?, net)
-    }
-
-    pub fn simulation_gate(&self, gate: GateId) -> Option<GateId> {
-        self.simulation
-            .as_ref()?
-            .scoped_gate(self.debug_path.as_deref()?, gate)
-    }
-
-    pub fn displayed_value(&self, net: NetId) -> Option<&Signal> {
-        self.simulation.as_ref()?.value(self.simulation_net(net)?)
-    }
-
     pub fn inspect_hdl_signal(&mut self, path: &str, probe: bool, cx: &mut Context<Self>) {
-        let result = (|| {
-            let sim = self
-                .simulation
-                .as_mut()
-                .ok_or_else(|| rgate_sim::SimError::Invalid("Simulation inactive".into()))?;
-            let net = sim.inspect_hdl(path)?;
-            if probe {
-                if self.probes.remove(&net) {
-                    sim.unprobe(net);
-                } else {
-                    sim.probe(net)?;
-                    sim.label_probe(net, path.replace('.', "/"));
-                    self.probes.insert(net);
+        match self.sim.inspect_hdl_signal(path, probe) {
+            Ok(()) => {
+                if probe {
+                    self.chrome.bottom_scope = true;
                 }
-                self.bottom_scope = true;
             }
-            Ok::<_, rgate_sim::SimError>(())
-        })();
-        if let Err(error) = result {
-            self.error(error);
+            Err(error) => self.error(error),
         }
         cx.notify();
-    }
-
-    pub fn is_probed(&self, net: NetId) -> bool {
-        self.probes
-            .contains(&self.simulation_net(net).unwrap_or(net))
     }
 
     pub fn toggle_probe(&mut self, net: NetId, cx: &mut Context<Self>) {
         if !self.ensure_simulator() {
             return;
         }
-        let Some(actual) = self.simulation_net(net) else {
-            self.log(
-                "Choose a live instance in the hierarchy tree to probe this definition.".into(),
-            );
-            return;
-        };
-        let saved = crate::workspace::SavedProbe {
-            root: self.simulation.as_ref().unwrap().root_path().into(),
-            path: self.debug_path.clone().unwrap_or_default(),
-            net: self.editor.module().net(net).unwrap().name.clone(),
-        };
-        if self.probes.remove(&actual) {
-            self.saved_probes.remove(&saved);
-            self.simulation.as_mut().unwrap().unprobe(actual);
-        } else {
-            self.probes.insert(actual);
-            self.saved_probes.insert(saved);
-            let result = self.simulation.as_mut().unwrap().probe(actual);
-            if let Err(error) = result {
+        let name = self
+            .editor
+            .module()
+            .net(net)
+            .map(|net| net.name.clone())
+            .unwrap_or_default();
+        match self.sim.toggle_probe(net, &name) {
+            Ok(true) => self.chrome.bottom_scope = true,
+            Ok(false) => {
+                self.log(
+                    "Choose a live instance in the hierarchy tree to probe this definition.".into(),
+                );
+                return;
+            }
+            Err(error) => {
                 self.error(error);
-            } else {
-                let path = self.debug_path.as_deref().unwrap_or("");
-                let name = self
-                    .editor
-                    .module()
-                    .net(net)
-                    .map(|net| net.name.as_str())
-                    .unwrap_or("");
-                self.simulation
-                    .as_mut()
-                    .unwrap()
-                    .label_probe(actual, format!("{path}/{name}"));
+                self.chrome.bottom_scope = true;
             }
         }
-        self.bottom_scope = true;
         cx.notify();
     }
 
     pub fn navigate_scope(&mut self, path: String, name: String, cx: &mut Context<Self>) {
-        if self
-            .simulation
-            .as_ref()
-            .is_some_and(|sim| sim.scope_module(&path) == Some(name.as_str()))
-        {
+        if self.sim.scope_matches(&path, &name) {
             self.remember_view();
             if let Err(error) = self.editor.switch_module(&name) {
                 self.error(error);
                 return;
             }
-            self.debug_path = Some(path.clone());
-            self.hover = None;
-            self.drag = None;
+            self.sim.debug_path = Some(path.clone());
+            self.canvas.clear_interaction();
             self.editor.set_tool(Tool::Select);
             self.restore_view();
-            self.tab = WorkspaceTab::Simulate;
-            self.status = format!("Live instance: {path}");
+            self.chrome.tab = WorkspaceTab::Simulate;
+            self.console.set_status(format!("Live instance: {path}"));
             cx.notify();
-        } else if self.simulation.is_some() {
+        } else if self.sim.is_active() {
             self.log(format!("{path} is not in the running simulation. Stop simulation to edit or run this definition independently."));
             cx.notify();
         } else {
@@ -205,16 +164,10 @@ impl GateApp {
     }
 
     pub fn switch_module(&mut self, name: String, cx: &mut Context<Self>) {
-        self.input_swap = None;
-        if let Some(sim) = &self.simulation {
-            let paths = sim
-                .scopes()
-                .iter()
-                .filter(|(_, scope)| scope.module == name)
-                .map(|(path, _)| path.clone())
-                .collect::<Vec<_>>();
-            if paths.len() == 1 {
-                self.navigate_scope(paths[0].clone(), name, cx);
+        self.canvas.input_swap = None;
+        if self.sim.is_active() {
+            if let Some(path) = self.sim.single_scope_for_module(&name) {
+                self.navigate_scope(path, name, cx);
             } else {
                 self.log("Choose the specific instance in Tree view; this definition has multiple or no running instances.".into());
                 cx.notify();
@@ -226,12 +179,10 @@ impl GateApp {
             self.error(error);
         } else {
             self.changed();
-            self.probes.clear();
-            self.hover = None;
-            self.drag = None;
+            self.canvas.clear_interaction();
             self.editor.set_tool(Tool::Select);
             self.restore_view();
-            self.tab = WorkspaceTab::Edit;
+            self.chrome.tab = WorkspaceTab::Edit;
         }
         cx.notify();
     }
@@ -239,37 +190,31 @@ impl GateApp {
     pub fn set_tab(&mut self, tab: WorkspaceTab, window: &mut Window, cx: &mut Context<Self>) {
         match tab {
             WorkspaceTab::Edit => {
-                #[cfg(not(target_family = "wasm"))]
-                self.cancel_compilation();
+                if self.hdl.cancel() {
+                    self.log("Compilation cancelled.".into());
+                }
                 self.remember_view();
-                self.running = false;
-                self.simulation = None;
-                self.debug_path = None;
-                self.probes.clear();
-                self.tab = tab;
+                self.sim.reset();
+                self.chrome.tab = tab;
                 self.remember_view();
             }
             WorkspaceTab::Interface => {
-                self.running = false;
-                self.tab = tab;
+                self.sim.pause();
+                self.chrome.tab = tab;
             }
             WorkspaceTab::Simulate => {
                 #[cfg(not(target_family = "wasm"))]
-                if self.background_compilation
-                    && self.simulation.is_none()
-                    && self
-                        .editor
-                        .circuit()
-                        .modules
-                        .iter()
-                        .any(|m| m.verilog.is_some())
-                {
+                if self.hdl.should_compile_in_background(
+                    self.sim.is_active(),
+                    self.editor.circuit(),
+                    &Command::ClockStep,
+                ) {
                     self.start_compilation(Command::ClockStep, cx);
                     return;
                 }
                 if self.ensure_simulator() {
-                    self.tab = tab;
-                    self.bottom_scope = true;
+                    self.chrome.tab = tab;
+                    self.chrome.bottom_scope = true;
                 }
             }
         }
@@ -301,7 +246,7 @@ impl GateApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.dialog = None;
+        self.dialogs.close();
         self.switch_module(result.module.clone(), cx);
         if self.editor.active_module() != result.module.as_str() {
             self.log(
@@ -328,11 +273,7 @@ impl GateApp {
             }
         };
         if let Some(center) = center {
-            self.editor.viewport.pan = Point::new(
-                f32::from(self.canvas_bounds.size.width) / 2.0,
-                f32::from(self.canvas_bounds.size.height) / 2.0,
-            ) - center * self.editor.viewport.zoom;
-            self.need_fit = false;
+            self.canvas.center_on(&mut self.editor, center);
         }
         self.focus.focus(window, cx);
         cx.notify();

@@ -42,7 +42,7 @@ impl SymbolDialog {
 }
 
 pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
-    let Some(Dialog::Symbol(dialog)) = &app.dialog else {
+    let Some(Dialog::Symbol(dialog)) = &app.dialogs.active else {
         return div().into_any_element();
     };
     let shapes = dialog.shapes.clone();
@@ -61,7 +61,7 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
                 .label(label)
                 .selected(dialog.tool == tool)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    if let Some(Dialog::Symbol(dialog)) = &mut this.dialog {
+                    if let Some(Dialog::Symbol(dialog)) = &mut this.dialogs.active {
                         dialog.tool = tool;
                         dialog.start = None;
                     }
@@ -77,7 +77,7 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
                 .ghost()
                 .label("Undo shape")
                 .on_click(cx.listener(|this, _, _, cx| {
-                    if let Some(Dialog::Symbol(dialog)) = &mut this.dialog {
+                    if let Some(Dialog::Symbol(dialog)) = &mut this.dialogs.active {
                         dialog.shapes.pop();
                     }
                     cx.notify();
@@ -89,7 +89,7 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
                 .ghost()
                 .label("Clear")
                 .on_click(cx.listener(|this, _, _, cx| {
-                    if let Some(Dialog::Symbol(dialog)) = &mut this.dialog {
+                    if let Some(Dialog::Symbol(dialog)) = &mut this.dialogs.active {
                         dialog.shapes.clear();
                     }
                     cx.notify();
@@ -101,14 +101,14 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
         .child(div().text_color(muted).child("Drag to draw. Origin is the center; coordinates snap to 5. Text is placed by clicking."))
         .child(Input::new(&dialog.text).small())
         .child(div().id("symbol-editor-canvas").h(px(320.0)).w_full().bg(rgb(palette.panel)).border_1().border_color(border).rounded(radius).overflow_hidden()
-            .child(canvas(move|bounds,_,cx|{let _=entity.update(cx,|app,_|{if let Some(Dialog::Symbol(dialog))=&mut app.dialog{dialog.bounds=bounds;}});},move|bounds,_,window,cx|{
+            .child(canvas(move|bounds,_,cx|{let _=entity.update(cx,|app,_|{if let Some(Dialog::Symbol(dialog))=&mut app.dialogs.active{dialog.bounds=bounds;}});},move|bounds,_,window,cx|{
                 let center=bounds.center();
                 stroke([point(bounds.left(),center.y),point(bounds.right(),center.y)],1.0,rgb(palette.grid).into(),true,window);
                 stroke([point(center.x,bounds.top()),point(center.x,bounds.bottom())],1.0,rgb(palette.grid).into(),true,window);
                 paint_shapes(&shapes,|p|center+point(px(p.x*2.0),px(p.y*2.0)),2.0,palette.gate,palette.panel,window,cx);
             }).size_full())
             .on_mouse_down(MouseButton::Left,cx.listener(|this,event:&gpui::MouseDownEvent,_,cx|{
-                if let Some(Dialog::Symbol(dialog))=&mut this.dialog {
+                if let Some(Dialog::Symbol(dialog))=&mut this.dialogs.active {
                     let local=dialog.local(event.position);
                     if dialog.tool==SymbolTool::Text {dialog.shapes.push(SymbolPrimitive::Text {position:local,text:dialog.text.read(cx).value().to_string()});}
                     else{dialog.start=Some(local);}
@@ -116,7 +116,7 @@ pub fn editor(app: &GateApp, cx: &mut Context<GateApp>) -> AnyElement {
                 cx.stop_propagation();cx.notify();
             }))
             .on_mouse_up(MouseButton::Left,cx.listener(|this,event:&gpui::MouseUpEvent,_,cx|{
-                if let Some(Dialog::Symbol(dialog))=&mut this.dialog && let Some(start)=dialog.start.take(){
+                if let Some(Dialog::Symbol(dialog))=&mut this.dialogs.active && let Some(start)=dialog.start.take(){
                     let end=dialog.local(event.position);
                     if start!=end {dialog.shapes.push(match dialog.tool {SymbolTool::Line=>SymbolPrimitive::Line {start,end},SymbolTool::Ellipse=>SymbolPrimitive::Ellipse {start,end,filled:false},_=>SymbolPrimitive::Rectangle {start,end,filled:false}});}
                 }

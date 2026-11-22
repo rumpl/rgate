@@ -196,7 +196,7 @@ impl GateApp {
                 IconName::Play,
                 "Run / pause simulation (Space)",
                 C::PlayPause,
-                self.running,
+                self.sim.running,
                 cx,
             ))
             .child(self.tool_button(
@@ -204,7 +204,7 @@ impl GateApp {
                 IconName::Pause,
                 "Pause / resume simulation (Space)",
                 C::PlayPause,
-                self.simulation.is_some() && !self.running,
+                self.sim.is_active() && !self.sim.running,
                 cx,
             ))
             .child(
@@ -216,7 +216,7 @@ impl GateApp {
                     false,
                     cx,
                 )
-                .disabled(self.simulation.is_none()),
+                .disabled(!self.sim.is_active()),
             )
             .child(self.tool_button(
                 "tool-step",

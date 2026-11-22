@@ -1,3 +1,4 @@
+pub mod layout;
 mod menus;
 mod sidebar;
 mod toolbar;
@@ -9,62 +10,17 @@ use crate::{
     theme::{Appearance, Theme},
 };
 use gpui::{
-    AnyElement, App, AppContext, Context, Entity, MouseButton, Pixels, SharedString, Window, div,
-    prelude::*, px,
+    AnyElement, App, Context, MouseButton, Pixels, SharedString, Window, div, prelude::*, px,
 };
 use gpui_component::{
     ActiveTheme, Selectable as _, Sizable as _, Theme as KitTheme, ThemeMode,
     button::{Button, ButtonVariants as _},
-    resizable::{ResizableState, h_resizable, resizable_panel, v_resizable},
+    resizable::{h_resizable, resizable_panel, v_resizable},
     separator::Separator,
     status_bar::StatusBar,
     v_flex,
 };
 use rgate_editor::Tool;
-
-/// Persistent split state for the main window panes.
-pub struct PanelLayout {
-    pub(super) main: Entity<ResizableState>,
-    pub(super) sidebar: Entity<ResizableState>,
-    pub(super) center: Entity<ResizableState>,
-    extents: [Pixels; 3],
-}
-
-impl PanelLayout {
-    pub fn new(cx: &mut App) -> Self {
-        Self {
-            main: cx.new(|_| ResizableState::default()),
-            sidebar: cx.new(|_| ResizableState::default()),
-            center: cx.new(|_| ResizableState::default()),
-            extents: [Pixels::ZERO; 3],
-        }
-    }
-
-    /// GPUI Kit rescales every pane proportionally when its container changes size.
-    /// Side panes should keep their chosen size instead, leaving the canvas to absorb
-    /// the difference (this matters most on the web, where the canvas grows after startup).
-    fn keep_side_panes(&mut self, sizes: [&[(usize, f32)]; 3], window: &mut Window, cx: &mut App) {
-        let states = [&self.main, &self.sidebar, &self.center];
-        for ((state, extent), fixed) in states.into_iter().zip(&mut self.extents).zip(sizes) {
-            let current = state.read(cx).container_size();
-            if current == *extent || current <= Pixels::ZERO {
-                continue;
-            }
-            *extent = current;
-            state.update(cx, |state, cx| {
-                for &(index, size) in fixed {
-                    if state
-                        .sizes()
-                        .get(index)
-                        .is_some_and(|actual| *actual != px(size))
-                    {
-                        state.resize_panel(index, px(size), window, cx);
-                    }
-                }
-            });
-        }
-    }
-}
 
 pub fn apply_appearance(appearance: Appearance, window: Option<&mut Window>, cx: &mut App) {
     let mode = if appearance.is_dark() {
@@ -130,31 +86,24 @@ impl GateApp {
             .left(Separator::vertical().h(px(12.0)))
             .left(format!(
                 "Module: {}",
-                self.debug_path
+                self.sim
+                    .debug_path
                     .as_deref()
                     .unwrap_or(self.editor.active_module())
             ))
-            .child(div().min_w_0().truncate().child(self.status.clone()))
+            .child(div().min_w_0().truncate().child(self.console.status.clone()))
             .right(format!(
                 "{tool}  {:.0}%  ({:.0}, {:.0})",
                 self.editor.viewport.zoom * 100.0,
-                self.mouse.x,
-                self.mouse.y
+                self.canvas.mouse.x,
+                self.canvas.mouse.y
             ))
             .into_any_element()
     }
 
     fn panes(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        self.layout.keep_side_panes(
-            [
-                &[(0, self.sidebar_width), (2, self.components_width)],
-                &[(0, self.modules_height)],
-                &[(1, self.bottom_height)],
-            ],
-            window,
-            cx,
-        );
-        let content = if self.tab == WorkspaceTab::Interface {
+        self.chrome.keep_side_panes(window, cx);
+        let content = if self.chrome.tab == WorkspaceTab::Interface {
             self.interface(cx)
         } else {
             self.schematic(window, cx)
@@ -164,12 +113,13 @@ impl GateApp {
         let main_app = cx.weak_entity();
         let center_app = cx.weak_entity();
         let center = v_resizable("center-split")
-            .with_state(&self.layout.center)
+            .with_state(&self.chrome.panels.center)
             .on_resize(move |state, _, cx| {
                 let height = state.read(cx).sizes().get(1).copied();
                 if let Some(height) = height
-                    && let Err(error) =
-                        center_app.update(cx, |this, _| this.bottom_height = f32::from(height))
+                    && let Err(error) = center_app.update(cx, |this, _| {
+                        this.chrome.bottom_height = f32::from(height)
+                    })
                 {
                     eprintln!("panel resize ignored: {error}");
                 }
@@ -185,19 +135,19 @@ impl GateApp {
             )
             .child(
                 resizable_panel()
-                    .size(px(self.bottom_height))
+                    .size(px(self.chrome.bottom_height))
                     .size_range(px(80.0)..px(380.0))
                     .flex_none()
                     .child(self.bottom_panel(window, cx)),
             );
         h_resizable("main-split")
-            .with_state(&self.layout.main)
+            .with_state(&self.chrome.panels.main)
             .on_resize(move |state, _, cx| {
                 let sizes = state.read(cx).sizes().clone();
                 if let [sidebar, _, components] = sizes[..]
                     && let Err(error) = main_app.update(cx, |this, _| {
-                        this.sidebar_width = f32::from(sidebar);
-                        this.components_width = f32::from(components);
+                        this.chrome.sidebar_width = f32::from(sidebar);
+                        this.chrome.components_width = f32::from(components);
                     })
                 {
                     eprintln!("panel resize ignored: {error}");
@@ -205,7 +155,7 @@ impl GateApp {
             })
             .child(
                 resizable_panel()
-                    .size(px(self.sidebar_width))
+                    .size(px(self.chrome.sidebar_width))
                     .size_range(px(150.0)..px(400.0))
                     .flex_none()
                     .bg(sidebar_bg)
@@ -218,7 +168,7 @@ impl GateApp {
             )
             .child(
                 resizable_panel()
-                    .size(px(self.components_width))
+                    .size(px(self.chrome.components_width))
                     .size_range(px(150.0)..px(600.0))
                     .flex_none()
                     .bg(sidebar_bg)
@@ -243,7 +193,7 @@ impl Render for GateApp {
         let (background, foreground) = (theme.background, theme.foreground);
         div()
             .id("rgate")
-            .key_context(if self.dialog.is_some() {
+            .key_context(if self.dialogs.is_open() {
                 "RGateDialog"
             } else {
                 "RGate"
@@ -262,7 +212,7 @@ impl Render for GateApp {
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_move(
                 cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
-                    if this.drag.is_some() && !this.canvas_bounds.contains(&event.position) {
+                    if this.canvas.drag.is_some() && !this.canvas.bounds.contains(&event.position) {
                         this.mouse_move(event, window, cx);
                     }
                 }),
