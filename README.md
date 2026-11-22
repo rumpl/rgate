@@ -10,7 +10,7 @@ and waveforms. Step through circuit behavior and look inside module instances to
 see how the pieces work together. Browse the
 [user documentation](docs/README.md).
 
-![RGate circuit editor](docs/images/editor.png)
+![RGate circuit editor](docs/images/editor.png?v=2026-11-22)
 
 Explore the [example circuits](examples/), from simple adders to a VGA
 controller and an LC-3 computer. Open one, follow the signals, and make it your
