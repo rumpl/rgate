@@ -1,8 +1,9 @@
 # Screenshot provenance
 
-Refreshed on 2026-10-10. These PNGs are genuine captures of RGate’s current web
-build in Chrome, at 1440×1000 CSS pixels, using Classic theme. No UI mockups or
-overlays were added.
+`editor.png` was refreshed on 2026-11-22 from the existing local web build
+using headless Chromium, Light appearance, and Classic theme. The other PNGs
+were captured on 2026-10-10 in Chrome. All use a 1440×1000 CSS-pixel viewport.
+No UI mockups or overlays were added.
 
 | Image                | Captured view                                                                     |
 | -------------------- | --------------------------------------------------------------------------------- |
