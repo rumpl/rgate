@@ -1,17 +1,20 @@
 //! Recursive-descent + Pratt parser for Verilog-2005 / SystemVerilog-2012 subset.
 
+mod cursor;
 mod expr;
 mod module;
 mod stmt;
 
-use crate::ast::ModuleDecl;
-use crate::lexer::{Span, Token, TokenKind};
+use crate::ast::{Expr, LValue, ModuleDecl, Range};
+use crate::lexer::Token;
 use crate::preprocess::Timescale;
+use cursor::TokenCursor;
+use expr::ExprParser;
+use std::ops::{Deref, DerefMut};
 
 pub fn parse_modules(tokens: Vec<Token>, timescale: Timescale) -> Result<Vec<ModuleDecl>, String> {
     let mut parser = Parser {
-        tokens,
-        pos: 0,
+        cursor: TokenCursor::new(tokens),
         timescale,
     };
     let mut modules = Vec::new();
@@ -21,78 +24,34 @@ pub fn parse_modules(tokens: Vec<Token>, timescale: Timescale) -> Result<Vec<Mod
     Ok(modules)
 }
 
-pub(super) struct Parser {
-    pub(super) tokens: Vec<Token>,
-    pub(super) pos: usize,
-    pub(super) timescale: Timescale,
+struct Parser {
+    cursor: TokenCursor,
+    timescale: Timescale,
+}
+
+impl Deref for Parser {
+    type Target = TokenCursor;
+    fn deref(&self) -> &Self::Target {
+        &self.cursor
+    }
+}
+
+impl DerefMut for Parser {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.cursor
+    }
 }
 
 impl Parser {
-    pub(super) fn peek(&self) -> &Token {
-        self.tokens
-            .get(self.pos)
-            .unwrap_or_else(|| self.tokens.last().unwrap())
+    pub(super) fn parse_expr(&mut self) -> Result<Expr, String> {
+        ExprParser::new(&mut self.cursor).parse_expr()
     }
 
-    pub(super) fn peek_kind(&self) -> &TokenKind {
-        &self.peek().kind
+    pub(super) fn parse_lvalue(&mut self) -> Result<LValue, String> {
+        ExprParser::new(&mut self.cursor).parse_lvalue()
     }
 
-    pub(super) fn peek_at(&self, offset: usize) -> &TokenKind {
-        self.tokens
-            .get(self.pos + offset)
-            .map(|t| &t.kind)
-            .unwrap_or(&TokenKind::Eof)
-    }
-
-    pub(super) fn at_eof(&self) -> bool {
-        matches!(self.peek_kind(), TokenKind::Eof)
-    }
-
-    pub(super) fn span(&self) -> Span {
-        self.peek().span.clone()
-    }
-
-    pub(super) fn err(&self, msg: impl Into<String>) -> String {
-        let s = self.span();
-        format!("{}:{}: {}", s.file, s.line, msg.into())
-    }
-
-    pub(super) fn advance(&mut self) -> Token {
-        let tok = self.peek().clone();
-        if self.pos + 1 < self.tokens.len() {
-            self.pos += 1;
-        }
-        tok
-    }
-
-    pub(super) fn eat(&mut self, expected: &TokenKind) -> bool {
-        if self.peek_kind() == expected {
-            self.advance();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub(super) fn expect(&mut self, expected: &TokenKind, label: &str) -> Result<Token, String> {
-        if self.peek_kind() == expected {
-            Ok(self.advance())
-        } else {
-            Err(self.err(format!(
-                "expected {label}, found {:?}",
-                self.peek_kind()
-            )))
-        }
-    }
-
-    pub(super) fn expect_ident(&mut self) -> Result<String, String> {
-        match self.peek_kind().clone() {
-            TokenKind::Ident(name) => {
-                self.advance();
-                Ok(name)
-            }
-            other => Err(self.err(format!("expected identifier, found {other:?}"))),
-        }
+    pub(super) fn parse_range(&mut self) -> Result<Range, String> {
+        ExprParser::new(&mut self.cursor).parse_range()
     }
 }

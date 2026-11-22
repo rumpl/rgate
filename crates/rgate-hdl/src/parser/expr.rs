@@ -1,47 +1,65 @@
-use super::Parser;
-use crate::ast::{BinaryOp, Expr, LValue, UnaryOp};
+use super::cursor::TokenCursor;
+use crate::ast::{BinaryOp, Expr, LValue, Range, UnaryOp};
 use crate::lexer::TokenKind;
 
-impl Parser {
+/// Standalone Pratt expression, lvalue, and range parser operating over a `TokenCursor`.
+pub(super) struct ExprParser<'a> {
+    cursor: &'a mut TokenCursor,
+}
+
+impl<'a> ExprParser<'a> {
+    pub(super) fn new(cursor: &'a mut TokenCursor) -> Self {
+        Self { cursor }
+    }
+
+    pub(super) fn parse_range(&mut self) -> Result<Range, String> {
+        self.cursor.expect(&TokenKind::LBracket, "`[`")?;
+        let msb = self.parse_expr()?;
+        self.cursor.expect(&TokenKind::Colon, "`:`")?;
+        let lsb = self.parse_expr()?;
+        self.cursor.expect(&TokenKind::RBracket, "`]`")?;
+        Ok(Range { msb, lsb })
+    }
+
     pub(super) fn parse_lvalue(&mut self) -> Result<LValue, String> {
-        if self.eat(&TokenKind::LBrace) {
+        if self.cursor.eat(&TokenKind::LBrace) {
             let mut parts = Vec::new();
             loop {
                 parts.push(self.parse_lvalue()?);
-                if !self.eat(&TokenKind::Comma) {
+                if !self.cursor.eat(&TokenKind::Comma) {
                     break;
                 }
             }
-            self.expect(&TokenKind::RBrace, "`}`")?;
+            self.cursor.expect(&TokenKind::RBrace, "`}`")?;
             return Ok(LValue::Concat(parts));
         }
-        let mut path = vec![self.expect_ident()?];
-        while self.eat(&TokenKind::Dot) {
-            path.push(self.expect_ident()?);
+        let mut path = vec![self.cursor.expect_ident()?];
+        while self.cursor.eat(&TokenKind::Dot) {
+            path.push(self.cursor.expect_ident()?);
         }
         let mut lv = LValue::Ident(path);
-        while self.eat(&TokenKind::LBracket) {
+        while self.cursor.eat(&TokenKind::LBracket) {
             let first = self.parse_expr()?;
-            if self.eat(&TokenKind::Colon) {
+            if self.cursor.eat(&TokenKind::Colon) {
                 let lsb = self.parse_expr()?;
-                self.expect(&TokenKind::RBracket, "`]`")?;
+                self.cursor.expect(&TokenKind::RBracket, "`]`")?;
                 lv = LValue::Range {
                     target: Box::new(lv),
                     msb: first,
                     lsb,
                 };
-            } else if self.eat(&TokenKind::PlusColon) {
+            } else if self.cursor.eat(&TokenKind::PlusColon) {
                 let width = self.parse_expr()?;
-                self.expect(&TokenKind::RBracket, "`]`")?;
+                self.cursor.expect(&TokenKind::RBracket, "`]`")?;
                 lv = LValue::IndexedPart {
                     target: Box::new(lv),
                     base: first,
                     width,
                     ascending: true,
                 };
-            } else if self.eat(&TokenKind::MinusColon) {
+            } else if self.cursor.eat(&TokenKind::MinusColon) {
                 let width = self.parse_expr()?;
-                self.expect(&TokenKind::RBracket, "`]`")?;
+                self.cursor.expect(&TokenKind::RBracket, "`]`")?;
                 lv = LValue::IndexedPart {
                     target: Box::new(lv),
                     base: first,
@@ -49,7 +67,7 @@ impl Parser {
                     ascending: false,
                 };
             } else {
-                self.expect(&TokenKind::RBracket, "`]`")?;
+                self.cursor.expect(&TokenKind::RBracket, "`]`")?;
                 lv = LValue::Index {
                     target: Box::new(lv),
                     index: first,
@@ -65,9 +83,9 @@ impl Parser {
 
     fn parse_ternary(&mut self) -> Result<Expr, String> {
         let cond = self.parse_binary(1)?;
-        if self.eat(&TokenKind::Question) {
+        if self.cursor.eat(&TokenKind::Question) {
             let then_expr = self.parse_expr()?;
-            self.expect(&TokenKind::Colon, "`:`")?;
+            self.cursor.expect(&TokenKind::Colon, "`:`")?;
             let else_expr = self.parse_ternary()?;
             Ok(Expr::Ternary {
                 cond: Box::new(cond),
@@ -81,11 +99,11 @@ impl Parser {
 
     fn parse_binary(&mut self, min_prec: u8) -> Result<Expr, String> {
         let mut lhs = self.parse_unary()?;
-        while let Some((op, prec)) = binary_op_prec(self.peek_kind()) {
+        while let Some((op, prec)) = binary_op_prec(self.cursor.peek_kind()) {
             if prec < min_prec {
                 break;
             }
-            self.advance();
+            self.cursor.advance();
             let rhs = self.parse_binary(prec + 1)?;
             lhs = Expr::Binary {
                 op,
@@ -97,7 +115,7 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, String> {
-        let op = match self.peek_kind() {
+        let op = match self.cursor.peek_kind() {
             TokenKind::Plus => Some(UnaryOp::Plus),
             TokenKind::Minus => Some(UnaryOp::Minus),
             TokenKind::Tilde => Some(UnaryOp::BitNot),
@@ -111,7 +129,7 @@ impl Parser {
             _ => None,
         };
         if let Some(op) = op {
-            self.advance();
+            self.cursor.advance();
             let expr = self.parse_unary()?;
             Ok(Expr::Unary {
                 op,
@@ -124,28 +142,28 @@ impl Parser {
 
     fn parse_postfix(&mut self) -> Result<Expr, String> {
         let mut expr = self.parse_primary()?;
-        while self.eat(&TokenKind::LBracket) {
+        while self.cursor.eat(&TokenKind::LBracket) {
             let first = self.parse_expr()?;
-            if self.eat(&TokenKind::Colon) {
+            if self.cursor.eat(&TokenKind::Colon) {
                 let lsb = self.parse_expr()?;
-                self.expect(&TokenKind::RBracket, "`]`")?;
+                self.cursor.expect(&TokenKind::RBracket, "`]`")?;
                 expr = Expr::Range {
                     target: Box::new(expr),
                     msb: Box::new(first),
                     lsb: Box::new(lsb),
                 };
-            } else if self.eat(&TokenKind::PlusColon) {
+            } else if self.cursor.eat(&TokenKind::PlusColon) {
                 let width = self.parse_expr()?;
-                self.expect(&TokenKind::RBracket, "`]`")?;
+                self.cursor.expect(&TokenKind::RBracket, "`]`")?;
                 expr = Expr::IndexedPart {
                     target: Box::new(expr),
                     base: Box::new(first),
                     width: Box::new(width),
                     ascending: true,
                 };
-            } else if self.eat(&TokenKind::MinusColon) {
+            } else if self.cursor.eat(&TokenKind::MinusColon) {
                 let width = self.parse_expr()?;
-                self.expect(&TokenKind::RBracket, "`]`")?;
+                self.cursor.expect(&TokenKind::RBracket, "`]`")?;
                 expr = Expr::IndexedPart {
                     target: Box::new(expr),
                     base: Box::new(first),
@@ -153,7 +171,7 @@ impl Parser {
                     ascending: false,
                 };
             } else {
-                self.expect(&TokenKind::RBracket, "`]`")?;
+                self.cursor.expect(&TokenKind::RBracket, "`]`")?;
                 expr = Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(first),
@@ -164,47 +182,47 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
-        match self.peek_kind().clone() {
+        match self.cursor.peek_kind().clone() {
             TokenKind::IntLiteral(n) => {
-                self.advance();
+                self.cursor.advance();
                 Ok(Expr::Int(n))
             }
             TokenKind::BasedLiteral { value, sized } => {
-                self.advance();
+                self.cursor.advance();
                 Ok(Expr::Based { value, sized })
             }
             TokenKind::UnbasedUnsized(bit) => {
-                self.advance();
+                self.cursor.advance();
                 Ok(Expr::UnbasedUnsized(bit))
             }
             TokenKind::RealLiteral(r) => {
-                self.advance();
+                self.cursor.advance();
                 Ok(Expr::Real(r))
             }
             TokenKind::StringLiteral(s) => {
-                self.advance();
+                self.cursor.advance();
                 Ok(Expr::String(s))
             }
             TokenKind::LParen => {
-                self.advance();
+                self.cursor.advance();
                 let e = self.parse_expr()?;
-                self.expect(&TokenKind::RParen, "`)`")?;
+                self.cursor.expect(&TokenKind::RParen, "`)`")?;
                 Ok(e)
             }
             TokenKind::LBrace => {
-                self.advance();
+                self.cursor.advance();
                 let first = self.parse_expr()?;
-                if self.eat(&TokenKind::LBrace) {
+                if self.cursor.eat(&TokenKind::LBrace) {
                     // Replication `{count{a, b, ...}}`
                     let mut inner = Vec::new();
                     loop {
                         inner.push(self.parse_expr()?);
-                        if !self.eat(&TokenKind::Comma) {
+                        if !self.cursor.eat(&TokenKind::Comma) {
                             break;
                         }
                     }
-                    self.expect(&TokenKind::RBrace, "`}`")?;
-                    self.expect(&TokenKind::RBrace, "`}`")?;
+                    self.cursor.expect(&TokenKind::RBrace, "`}`")?;
+                    self.cursor.expect(&TokenKind::RBrace, "`}`")?;
                     let body = if inner.len() == 1 {
                         inner.pop().unwrap()
                     } else {
@@ -216,24 +234,24 @@ impl Parser {
                     })
                 } else {
                     let mut parts = vec![first];
-                    while self.eat(&TokenKind::Comma) {
+                    while self.cursor.eat(&TokenKind::Comma) {
                         parts.push(self.parse_expr()?);
                     }
-                    self.expect(&TokenKind::RBrace, "`}`")?;
+                    self.cursor.expect(&TokenKind::RBrace, "`}`")?;
                     Ok(Expr::Concat(parts))
                 }
             }
             TokenKind::SysIdent(name) => {
-                self.advance();
-                let args = if self.eat(&TokenKind::LParen) {
+                self.cursor.advance();
+                let args = if self.cursor.eat(&TokenKind::LParen) {
                     let mut a = Vec::new();
-                    while !matches!(self.peek_kind(), TokenKind::RParen | TokenKind::Eof) {
+                    while !matches!(self.cursor.peek_kind(), TokenKind::RParen | TokenKind::Eof) {
                         a.push(self.parse_expr()?);
-                        if !self.eat(&TokenKind::Comma) {
+                        if !self.cursor.eat(&TokenKind::Comma) {
                             break;
                         }
                     }
-                    self.expect(&TokenKind::RParen, "`)`")?;
+                    self.cursor.expect(&TokenKind::RParen, "`)`")?;
                     a
                 } else {
                     Vec::new()
@@ -241,25 +259,27 @@ impl Parser {
                 Ok(Expr::SysCall { name, args })
             }
             TokenKind::Ident(first) => {
-                self.advance();
-                if self.eat(&TokenKind::LParen) {
+                self.cursor.advance();
+                if self.cursor.eat(&TokenKind::LParen) {
                     let mut args = Vec::new();
-                    while !matches!(self.peek_kind(), TokenKind::RParen | TokenKind::Eof) {
+                    while !matches!(self.cursor.peek_kind(), TokenKind::RParen | TokenKind::Eof) {
                         args.push(self.parse_expr()?);
-                        if !self.eat(&TokenKind::Comma) {
+                        if !self.cursor.eat(&TokenKind::Comma) {
                             break;
                         }
                     }
-                    self.expect(&TokenKind::RParen, "`)`")?;
+                    self.cursor.expect(&TokenKind::RParen, "`)`")?;
                     return Ok(Expr::Call { name: first, args });
                 }
                 let mut path = vec![first];
-                while self.eat(&TokenKind::Dot) {
-                    path.push(self.expect_ident()?);
+                while self.cursor.eat(&TokenKind::Dot) {
+                    path.push(self.cursor.expect_ident()?);
                 }
                 Ok(Expr::Ident(path))
             }
-            other => Err(self.err(format!("expected expression, found {other:?}"))),
+            other => Err(self
+                .cursor
+                .err(format!("expected expression, found {other:?}"))),
         }
     }
 }

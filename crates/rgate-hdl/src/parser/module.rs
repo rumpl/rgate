@@ -193,15 +193,6 @@ impl Parser {
         kind
     }
 
-    pub(super) fn parse_range(&mut self) -> Result<Range, String> {
-        self.expect(&TokenKind::LBracket, "`[`")?;
-        let msb = self.parse_expr()?;
-        self.expect(&TokenKind::Colon, "`:`")?;
-        let lsb = self.parse_expr()?;
-        self.expect(&TokenKind::RBracket, "`]`")?;
-        Ok(Range { msb, lsb })
-    }
-
     pub(super) fn parse_module_items_into(
         &mut self,
         items: &mut Vec<ModuleItem>,
