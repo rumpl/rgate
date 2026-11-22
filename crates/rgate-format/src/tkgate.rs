@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use regex::Regex;
+use regex::{Captures, Regex};
 use rgate_core::{
     Circuit, Direction, Gate, GateKind, Module, Net, NetId, Pin, PinRef, Point, Signal, Wire,
 };
@@ -64,7 +64,7 @@ pub fn import(source: &str) -> Result<ImportResult> {
         if header.contains("root_module") {
             root = Some(name.clone());
         }
-        let module = import_module(&name, body, &mut warnings)?;
+        let module = ModuleImporter::new(&name, &mut warnings).import(body)?;
         modules.push(module);
     }
     if modules.is_empty() {
@@ -78,6 +78,14 @@ pub fn import(source: &str) -> Result<ImportResult> {
         root: root.unwrap_or_else(|| modules[0].name.clone()),
         modules,
     };
+    resolve_module_interfaces(&mut circuit);
+    circuit
+        .validate()
+        .context("invalid geometry or connectivity in TkGate file")?;
+    Ok(ImportResult { circuit, warnings })
+}
+
+fn resolve_module_interfaces(circuit: &mut Circuit) {
     let interfaces = circuit
         .modules
         .iter()
@@ -111,323 +119,355 @@ pub fn import(source: &str) -> Result<ImportResult> {
             }
         }
     }
-    circuit
-        .validate()
-        .context("invalid geometry or connectivity in TkGate file")?;
-    Ok(ImportResult { circuit, warnings })
 }
 
-fn import_module(name: &str, body: &str, warnings: &mut Vec<String>) -> Result<Module> {
-    let mut module = Module::new(name);
-    let mut names: HashMap<String, NetId> = HashMap::new();
-    let mut endpoint_map: HashMap<(NetId, i32), (usize, bool)> = HashMap::new();
-    let mut current_net = None;
-    for line in body.lines() {
-        if let Some(capture) = DECLARATION.captures(line) {
-            let width = if let (Some(high), Some(low)) = (capture.get(2), capture.get(3)) {
-                let high: u32 = high.as_str().parse()?;
-                let low: u32 = low.as_str().parse()?;
-                let width = high.abs_diff(low) + 1;
-                if width > 4096 {
-                    bail!(
-                        "net {} is {width} bits; supported widths are 1–4096",
-                        &capture[4]
-                    );
-                }
-                width as u16
-            } else {
-                1
-            };
-            let id = module.next_net_id();
-            let mut net = Net::new(id, &capture[4], width);
-            net.show_name = !line.contains("/sn:0");
-            net.port = match &capture[1] {
-                "input" => Some(Direction::Input),
-                "output" => Some(Direction::Output),
-                "inout" => Some(Direction::InOut),
-                _ => None,
-            };
-            names.insert(net.name.clone(), id);
-            module.nets.push(net);
-            current_net = Some(id);
-        } else if !line.trim_start().starts_with("//: {") {
-            current_net = None;
-        }
-        if let Some(net) = current_net {
-            for segment in SEGMENT.captures_iter(line) {
-                let points = COORDINATE
-                    .captures_iter(&segment[2])
-                    .map(|coordinate| -> Result<Point> {
-                        let x = coordinate[1]
-                            .rsplit(':')
-                            .next()
-                            .unwrap()
-                            .trim()
-                            .parse::<f32>()?;
-                        let y = coordinate[2].parse::<f32>()?;
-                        Ok(Point::new(x, y))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                if points.len() < 2 {
-                    continue;
-                }
-                let index = module.wires.len();
-                endpoint_map.insert((net, segment[1].parse()?), (index, true));
-                endpoint_map.insert((net, segment[3].parse()?), (index, false));
-                module.wires.push(Wire {
-                    id: module.next_wire_id(),
-                    net,
-                    points,
-                    start: None,
-                    end: None,
-                });
-            }
+struct ModuleImporter<'a> {
+    name: &'a str,
+    module: Module,
+    names: HashMap<String, NetId>,
+    endpoint_map: HashMap<(NetId, i32), (usize, bool)>,
+    warnings: &'a mut Vec<String>,
+}
+
+impl<'a> ModuleImporter<'a> {
+    fn new(name: &'a str, warnings: &'a mut Vec<String>) -> Self {
+        Self {
+            name,
+            module: Module::new(name),
+            names: HashMap::new(),
+            endpoint_map: HashMap::new(),
+            warnings,
         }
     }
-    let mut comment = None;
-    for line in body.lines() {
-        if let Some(index) = comment {
-            if let Some((_, text)) = line.split_once("//: /line:") {
-                let text = decode_comment(text.trim())?;
-                let gate: &mut Gate = &mut module.gates[index];
-                if !gate.text.is_empty() {
-                    gate.text.push('\n');
-                }
-                gate.text.push_str(&text);
-            } else if line.contains("//: /end") {
-                comment = None;
+
+    fn import(mut self, body: &str) -> Result<Module> {
+        self.parse_nets_and_wires(body)?;
+        self.parse_gates_and_comments(body)?;
+        Ok(self.module)
+    }
+
+    fn parse_nets_and_wires(&mut self, body: &str) -> Result<()> {
+        let mut current_net = None;
+        for line in body.lines() {
+            if let Some(capture) = DECLARATION.captures(line) {
+                let width = parse_decl_width(&capture)?;
+                let id = self.module.next_net_id();
+                let mut net = Net::new(id, &capture[4], width);
+                net.show_name = !line.contains("/sn:0");
+                net.port = match &capture[1] {
+                    "input" => Some(Direction::Input),
+                    "output" => Some(Direction::Output),
+                    "inout" => Some(Direction::InOut),
+                    _ => None,
+                };
+                self.names.insert(net.name.clone(), id);
+                self.module.nets.push(net);
+                current_net = Some(id);
+            } else if !line.trim_start().starts_with("//: {") {
+                current_net = None;
             }
-            continue;
+            if let Some(net) = current_net {
+                self.parse_wire_segments(net, line)?;
+            }
         }
-        if let Some(capture) = ANNOTATION.captures(line) {
-            let kind = match &capture[1] {
-                "SWITCH" => GateKind::Switch,
-                "DIP" => GateKind::Dip,
-                "LED" => GateKind::Led,
-                "GROUND" => GateKind::Ground,
-                "VDD" => GateKind::Vdd,
-                "frame" => GateKind::Frame,
-                _ => GateKind::Comment,
-            };
-            let position = position(line).context("missing gate position")?;
-            let mut gate = Gate::new(module.next_gate_id(), kind, position);
-            gate.name = capture[2].to_owned();
-            metadata(&mut gate, line)?;
-            if gate.kind == GateKind::Comment || gate.kind == GateKind::Frame {
-                comment = Some(module.gates.len());
-            } else if let Some(net_name) = capture.get(3) {
-                let net = *names
-                    .get(net_name.as_str())
-                    .with_context(|| format!("unknown net {}", net_name.as_str()))?;
-                gate.width = module.net(net).unwrap().width;
-                gate.initial = gate.initial.resized(gate.width);
-                gate.pins[0].net = Some(net);
-                attach(
-                    &mut gate,
-                    0,
-                    endpoint_numbers(line).first().copied(),
-                    &mut module,
-                    &endpoint_map,
-                );
-            }
-            module.gates.push(gate);
-        } else if let Some(capture) = CONCAT.captures(line) {
-            let output = *names
-                .get(&capture[1])
-                .context("unknown concatenation output net")?;
-            let inputs = capture[2]
-                .split(',')
-                .map(|name| {
-                    names
-                        .get(name.trim())
-                        .copied()
-                        .context("unknown concatenation input net")
+        Ok(())
+    }
+
+    fn parse_wire_segments(&mut self, net: NetId, line: &str) -> Result<()> {
+        for segment in SEGMENT.captures_iter(line) {
+            let points = COORDINATE
+                .captures_iter(&segment[2])
+                .map(|coordinate| -> Result<Point> {
+                    let x = coordinate[1]
+                        .rsplit(':')
+                        .next()
+                        .unwrap()
+                        .trim()
+                        .parse::<f32>()?;
+                    let y = coordinate[2].parse::<f32>()?;
+                    Ok(Point::new(x, y))
                 })
                 .collect::<Result<Vec<_>>>()?;
-            let mut gate = Gate::new(
-                module.next_gate_id(),
-                GateKind::Concat,
-                position(&capture[4]).context("missing concatenation position")?,
-            );
-            gate.name = capture[3].to_owned();
-            gate.width = module.net(output).unwrap().width;
-            gate.initial = gate.initial.resized(gate.width);
-            gate.config.partitions = inputs
-                .iter()
-                .rev()
-                .map(|net| module.net(*net).unwrap().width)
-                .collect();
-            gate.reset_pins();
-            metadata(&mut gate, &capture[4])?;
-            let endpoints = endpoint_numbers(&capture[4]);
-            let output_index = gate.pins.iter().position(|pin| pin.name == "Z").unwrap();
-            gate.pins[output_index].net = Some(output);
-            gate.pins[output_index].offset = Point::new(1.0, 0.0);
-            attach(
-                &mut gate,
-                output_index,
-                endpoints.first().copied(),
-                &mut module,
-                &endpoint_map,
-            );
-            for (index, net) in inputs.iter().rev().enumerate() {
-                let pin_index = gate
-                    .pins
-                    .iter()
-                    .position(|pin| pin.name == format!("I{index}"))
-                    .unwrap();
-                gate.pins[pin_index].net = Some(*net);
-                gate.pins[pin_index].offset = Point::new(
-                    -5.0,
-                    (index as f32 - (inputs.len() as f32 - 1.0) / 2.0) * 10.0,
-                );
-                attach(
-                    &mut gate,
-                    pin_index,
-                    endpoints.get(inputs.len() - index).copied(),
-                    &mut module,
-                    &endpoint_map,
-                );
-            }
-            module.gates.push(gate);
-        } else if let Some(capture) = INSTANCE.captures(line) {
-            let primitive = &capture[1];
-            let (mut kind, inputs, width) = primitive_kind(primitive);
-            if capture[4].contains('~') {
-                kind = GateKind::Unsupported(primitive.into());
-            }
-            if matches!(kind, GateKind::Unsupported(_)) {
-                warnings.push(format!(
-                    "{name}.{}: {primitive} is displayed but not simulated",
-                    &capture[3]
-                ));
-            }
-            let Some(position) = position(&capture[5]) else {
-                warnings.push(format!(
-                    "{name}.{} has no TkGate placement annotation",
-                    &capture[3]
-                ));
+            if points.len() < 2 {
                 continue;
-            };
-            let mut gate = Gate::new(module.next_gate_id(), kind, position);
-            gate.name = capture[3].to_owned();
-            gate.width = width;
-            gate.input_count = inputs;
-            if gate.kind.is_logic() && inputs == 1 && width > 1 {
-                gate.config.reduction = true;
             }
-            if gate.kind == GateKind::TriState {
-                gate.config.invert_output =
-                    primitive.contains("NBUFIF") || primitive.contains("NOTIF");
-                gate.config.enable_low =
-                    primitive.contains("BUFIF0") || primitive.contains("NOTIF0");
-            }
-            gate.initial = gate.initial.resized(width);
-            if matches!(gate.kind, GateKind::Ram | GateKind::Rom) {
-                let digits = primitive
-                    .trim_start_matches("_GG")
-                    .trim_start_matches("RAM")
-                    .trim_start_matches("ROM");
-                gate.config.address_bits = digits
-                    .split('x')
-                    .next()
-                    .unwrap_or("8")
-                    .parse()
-                    .context("invalid memory address width")?;
-            }
-            gate.reset_pins();
-            metadata(&mut gate, &capture[5])?;
-            if let Some(delays) = capture.get(2) {
-                let values = delays
-                    .as_str()
-                    .split(',')
-                    .filter_map(|value| value.trim().parse::<u64>().ok())
-                    .collect::<Vec<_>>();
-                gate.delay = if matches!(gate.kind, GateKind::Dff | GateKind::Register) {
-                    values.last().copied().unwrap_or(4)
-                } else {
-                    values.first().copied().unwrap_or(4)
-                };
-            }
-            let endpoints = endpoint_numbers(&capture[5]);
-            for (connection_index, connection) in CONNECTION.captures_iter(&capture[4]).enumerate()
-            {
-                let net = *names
-                    .get(&connection[2])
-                    .with_context(|| format!("unknown net {}", &connection[2]))?;
-                let pin_name = &connection[1];
-                if gate.pin(pin_name).is_none() {
-                    let direction = if matches!(pin_name, "Z" | "Q" | "_Q" | "Y" | "CO") {
-                        Direction::Output
-                    } else {
-                        Direction::Input
-                    };
-                    let offset = Point::new(
-                        if direction == Direction::Output {
-                            35.0
-                        } else {
-                            -35.0
-                        },
-                        connection_index as f32 * 8.0 - 12.0,
-                    );
-                    gate.pins.push(Pin::new(pin_name, direction, offset));
+            let index = self.module.wires.len();
+            self.endpoint_map
+                .insert((net, segment[1].parse()?), (index, true));
+            self.endpoint_map
+                .insert((net, segment[3].parse()?), (index, false));
+            self.module.wires.push(Wire {
+                id: self.module.next_wire_id(),
+                net,
+                points,
+                start: None,
+                end: None,
+            });
+        }
+        Ok(())
+    }
+
+    fn parse_gates_and_comments(&mut self, body: &str) -> Result<()> {
+        let mut comment: Option<usize> = None;
+        for line in body.lines() {
+            if let Some(index) = comment {
+                if let Some((_, text)) = line.split_once("//: /line:") {
+                    let text = decode_comment(text.trim())?;
+                    let gate = &mut self.module.gates[index];
+                    if !gate.text.is_empty() {
+                        gate.text.push('\n');
+                    }
+                    gate.text.push_str(&text);
+                } else if line.contains("//: /end") {
+                    comment = None;
                 }
-                let pin_index = gate
-                    .pins
-                    .iter()
-                    .position(|pin| pin.name == pin_name)
-                    .unwrap();
-                gate.pins[pin_index].net = Some(net);
-                attach(
-                    &mut gate,
-                    pin_index,
-                    endpoints.get(connection_index).copied(),
-                    &mut module,
-                    &endpoint_map,
-                );
+                continue;
             }
-            module.gates.push(gate);
-        } else if line.contains("@(") && !line.contains("//: joint") && !line.contains("//: /line")
-        {
-            warnings.push(format!(
-                "{name}: unsupported annotated statement: {}",
-                line.trim()
+            if let Some(capture) = ANNOTATION.captures(line) {
+                comment = self.import_annotation(&capture, line)?;
+            } else if let Some(capture) = CONCAT.captures(line) {
+                self.import_concat(&capture)?;
+            } else if let Some(capture) = INSTANCE.captures(line) {
+                self.import_instance(&capture)?;
+            } else if line.contains("@(")
+                && !line.contains("//: joint")
+                && !line.contains("//: /line")
+            {
+                self.warnings.push(format!(
+                    "{}: unsupported annotated statement: {}",
+                    self.name,
+                    line.trim()
+                ));
+            } else if line.trim_start().starts_with("assign ")
+                || line.trim_start().starts_with("always ")
+                || line.trim_start().starts_with("initial ")
+            {
+                self.warnings
+                    .push(format!("{}: HDL is not executed: {}", self.name, line.trim()));
+            }
+        }
+        Ok(())
+    }
+
+    fn import_annotation(&mut self, capture: &Captures<'_>, line: &str) -> Result<Option<usize>> {
+        let kind = match &capture[1] {
+            "SWITCH" => GateKind::Switch,
+            "DIP" => GateKind::Dip,
+            "LED" => GateKind::Led,
+            "GROUND" => GateKind::Ground,
+            "VDD" => GateKind::Vdd,
+            "frame" => GateKind::Frame,
+            _ => GateKind::Comment,
+        };
+        let pos = position(line).context("missing gate position")?;
+        let mut gate = Gate::new(self.module.next_gate_id(), kind, pos);
+        gate.name = capture[2].to_owned();
+        metadata(&mut gate, line)?;
+        let opened_comment = if gate.kind == GateKind::Comment || gate.kind == GateKind::Frame {
+            Some(self.module.gates.len())
+        } else {
+            if let Some(net_name) = capture.get(3) {
+                let net = *self
+                    .names
+                    .get(net_name.as_str())
+                    .with_context(|| format!("unknown net {}", net_name.as_str()))?;
+                gate.width = self.module.net(net).unwrap().width;
+                gate.initial = gate.initial.resized(gate.width);
+                gate.pins[0].net = Some(net);
+                self.attach(&mut gate, 0, endpoint_numbers(line).first().copied());
+            }
+            None
+        };
+        self.module.gates.push(gate);
+        Ok(opened_comment)
+    }
+
+    fn import_concat(&mut self, capture: &Captures<'_>) -> Result<()> {
+        let output = *self
+            .names
+            .get(&capture[1])
+            .context("unknown concatenation output net")?;
+        let inputs = capture[2]
+            .split(',')
+            .map(|name| {
+                self.names
+                    .get(name.trim())
+                    .copied()
+                    .context("unknown concatenation input net")
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut gate = Gate::new(
+            self.module.next_gate_id(),
+            GateKind::Concat,
+            position(&capture[4]).context("missing concatenation position")?,
+        );
+        gate.name = capture[3].to_owned();
+        gate.width = self.module.net(output).unwrap().width;
+        gate.initial = gate.initial.resized(gate.width);
+        gate.config.partitions = inputs
+            .iter()
+            .rev()
+            .map(|net| self.module.net(*net).unwrap().width)
+            .collect();
+        gate.reset_pins();
+        metadata(&mut gate, &capture[4])?;
+        let endpoints = endpoint_numbers(&capture[4]);
+        let output_index = gate.pins.iter().position(|pin| pin.name == "Z").unwrap();
+        gate.pins[output_index].net = Some(output);
+        gate.pins[output_index].offset = Point::new(1.0, 0.0);
+        self.attach(&mut gate, output_index, endpoints.first().copied());
+        for (index, net) in inputs.iter().rev().enumerate() {
+            let pin_index = gate
+                .pins
+                .iter()
+                .position(|pin| pin.name == format!("I{index}"))
+                .unwrap();
+            gate.pins[pin_index].net = Some(*net);
+            gate.pins[pin_index].offset = Point::new(
+                -5.0,
+                (index as f32 - (inputs.len() as f32 - 1.0) / 2.0) * 10.0,
+            );
+            self.attach(
+                &mut gate,
+                pin_index,
+                endpoints.get(inputs.len() - index).copied(),
+            );
+        }
+        self.module.gates.push(gate);
+        Ok(())
+    }
+
+    fn import_instance(&mut self, capture: &Captures<'_>) -> Result<()> {
+        let primitive = &capture[1];
+        let (mut kind, inputs, width) = primitive_kind(primitive);
+        if capture[4].contains('~') {
+            kind = GateKind::Unsupported(primitive.into());
+        }
+        if matches!(kind, GateKind::Unsupported(_)) {
+            self.warnings.push(format!(
+                "{}.{}: {primitive} is displayed but not simulated",
+                self.name, &capture[3]
             ));
-        } else if line.trim_start().starts_with("assign ")
-            || line.trim_start().starts_with("always ")
-            || line.trim_start().starts_with("initial ")
+        }
+        let Some(pos) = position(&capture[5]) else {
+            self.warnings.push(format!(
+                "{}.{} has no TkGate placement annotation",
+                self.name, &capture[3]
+            ));
+            return Ok(());
+        };
+        let mut gate = Gate::new(self.module.next_gate_id(), kind, pos);
+        gate.name = capture[3].to_owned();
+        gate.width = width;
+        gate.input_count = inputs;
+        if gate.kind.is_logic() && inputs == 1 && width > 1 {
+            gate.config.reduction = true;
+        }
+        if gate.kind == GateKind::TriState {
+            gate.config.invert_output =
+                primitive.contains("NBUFIF") || primitive.contains("NOTIF");
+            gate.config.enable_low = primitive.contains("BUFIF0") || primitive.contains("NOTIF0");
+        }
+        gate.initial = gate.initial.resized(width);
+        if matches!(gate.kind, GateKind::Ram | GateKind::Rom) {
+            let digits = primitive
+                .trim_start_matches("_GG")
+                .trim_start_matches("RAM")
+                .trim_start_matches("ROM");
+            gate.config.address_bits = digits
+                .split('x')
+                .next()
+                .unwrap_or("8")
+                .parse()
+                .context("invalid memory address width")?;
+        }
+        gate.reset_pins();
+        metadata(&mut gate, &capture[5])?;
+        if let Some(delays) = capture.get(2) {
+            let values = delays
+                .as_str()
+                .split(',')
+                .filter_map(|value| value.trim().parse::<u64>().ok())
+                .collect::<Vec<_>>();
+            gate.delay = if matches!(gate.kind, GateKind::Dff | GateKind::Register) {
+                values.last().copied().unwrap_or(4)
+            } else {
+                values.first().copied().unwrap_or(4)
+            };
+        }
+        let endpoints = endpoint_numbers(&capture[5]);
+        for (connection_index, connection) in CONNECTION.captures_iter(&capture[4]).enumerate() {
+            let net = *self
+                .names
+                .get(&connection[2])
+                .with_context(|| format!("unknown net {}", &connection[2]))?;
+            let pin_name = &connection[1];
+            if gate.pin(pin_name).is_none() {
+                let direction = if matches!(pin_name, "Z" | "Q" | "_Q" | "Y" | "CO") {
+                    Direction::Output
+                } else {
+                    Direction::Input
+                };
+                let offset = Point::new(
+                    if direction == Direction::Output {
+                        35.0
+                    } else {
+                        -35.0
+                    },
+                    connection_index as f32 * 8.0 - 12.0,
+                );
+                gate.pins.push(Pin::new(pin_name, direction, offset));
+            }
+            let pin_index = gate
+                .pins
+                .iter()
+                .position(|pin| pin.name == pin_name)
+                .unwrap();
+            gate.pins[pin_index].net = Some(net);
+            self.attach(&mut gate, pin_index, endpoints.get(connection_index).copied());
+        }
+        self.module.gates.push(gate);
+        Ok(())
+    }
+
+    fn attach(&mut self, gate: &mut Gate, pin_index: usize, endpoint: Option<i32>) {
+        let net = gate.pins[pin_index].net.unwrap();
+        if let Some((index, start)) = endpoint
+            .and_then(|endpoint| self.endpoint_map.get(&(net, endpoint)))
+            .copied()
         {
-            warnings.push(format!("{name}: HDL is not executed: {}", line.trim()));
+            let wire = &mut self.module.wires[index];
+            let reference = PinRef::new(gate.id, &gate.pins[pin_index].name);
+            let point = if start {
+                wire.points[0]
+            } else {
+                *wire.points.last().unwrap()
+            };
+            gate.pins[pin_index].offset =
+                (point - gate.position).rotated((4 - gate.rotation % 4) % 4);
+            if start {
+                wire.start = Some(reference);
+            } else {
+                wire.end = Some(reference);
+            }
         }
     }
-    Ok(module)
 }
 
-fn attach(
-    gate: &mut Gate,
-    pin_index: usize,
-    endpoint: Option<i32>,
-    module: &mut Module,
-    map: &HashMap<(NetId, i32), (usize, bool)>,
-) {
-    let net = gate.pins[pin_index].net.unwrap();
-    if let Some((index, start)) = endpoint
-        .and_then(|endpoint| map.get(&(net, endpoint)))
-        .copied()
-    {
-        let wire = &mut module.wires[index];
-        let reference = PinRef::new(gate.id, &gate.pins[pin_index].name);
-        let point = if start {
-            wire.points[0]
-        } else {
-            *wire.points.last().unwrap()
-        };
-        gate.pins[pin_index].offset = (point - gate.position).rotated((4 - gate.rotation % 4) % 4);
-        if start {
-            wire.start = Some(reference);
-        } else {
-            wire.end = Some(reference);
+fn parse_decl_width(capture: &Captures<'_>) -> Result<u16> {
+    if let (Some(high), Some(low)) = (capture.get(2), capture.get(3)) {
+        let high: u32 = high.as_str().parse()?;
+        let low: u32 = low.as_str().parse()?;
+        let width = high.abs_diff(low) + 1;
+        if width > 4096 {
+            bail!(
+                "net {} is {width} bits; supported widths are 1–4096",
+                &capture[4]
+            );
         }
+        Ok(width as u16)
+    } else {
+        Ok(1)
     }
 }
 
@@ -686,6 +726,7 @@ endmodule
         assert!(import("not a circuit").is_err());
         assert!(import("module main;\nwire [4096:0] huge;\nendmodule\n").is_err());
     }
+
     #[test]
     fn new_primitive_names_map_to_simulated_components() {
         for (name, kind, width) in [
@@ -704,6 +745,7 @@ endmodule
             assert_eq!(actual_width, width);
         }
     }
+
     #[test]
     fn imports_all_original_led_display_types() {
         for (number, mode) in [
@@ -720,6 +762,7 @@ endmodule
             assert_eq!(result.circuit.modules[0].gates[0].config.led_display, mode);
         }
     }
+
     #[test]
     fn authored_concat_preserves_order_and_all_wire_endpoints() {
         let result=import("module main; //: root_module\nwire [2:0] combined;\nwire a;\nwire b;\nwire c;\nassign combined={c,b,a}; //: CONCAT join @(160,100) /w:[-1 -1 -1 -1]\nendmodule\n").unwrap();
