@@ -9,14 +9,10 @@ publish = false
 [lints]
 workspace = true
 
-[features]
-default = []
-icarus = ["dep:rgate-hdl"]
-
 [dependencies]
 rgate-core.workspace = true
 rgate-sim.workspace = true
-rgate-hdl = { path = "../rgate-hdl", optional = true, features = ["icarus"] }
+rgate-hdl = { path = "../rgate-hdl" }
 rgate-format.workspace = true
 rgate-editor.workspace = true
 gpui.workspace = true

@@ -2,7 +2,7 @@ use crate::live_simulation::LiveSimulation;
 use rgate_core::{Gate, GateId, GateKind, NetId, Point, Signal};
 
 #[test]
-fn icarus_drives_standalone_ports_but_not_child_ports() {
+fn verilog_drives_standalone_ports_but_not_child_ports() {
     let mut circuit = rgate_core::demo::hierarchical_inverters();
     let mut port = Gate::new(GateId(2), GateKind::InputPort, Point::ZERO);
     port.pin_mut("P").unwrap().net = Some(NetId(1));

@@ -107,5 +107,5 @@ mod source_editor;
 
 mod hdl_diagnostics;
 
-#[cfg(feature = "icarus")]
+#[cfg(not(target_family = "wasm"))]
 mod compilation;

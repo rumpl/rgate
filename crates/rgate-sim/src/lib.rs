@@ -130,7 +130,7 @@ impl Simulator {
             .any(|module| module.verilog.is_some())
         {
             return Err(SimError::Invalid(
-                "Verilog source requires the native Icarus backend".into(),
+                "Verilog source requires the built-in Verilog backend".into(),
             ));
         }
         let flattened = circuit

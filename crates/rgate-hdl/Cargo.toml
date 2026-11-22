@@ -9,21 +9,16 @@ publish = false
 [lints]
 workspace = true
 
-[features]
-default = []
-icarus = ["dep:tempfile"]
-
 [dependencies]
 rgate-core.workspace = true
 rgate-sim.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tempfile = { version = "3", optional = true }
 
 [[bin]]
 name = "rgate-hdl"
 path = "src/main.rs"
-required-features = ["icarus"]
 
 [dev-dependencies]
 rgate-format.workspace = true
+tempfile = "3"

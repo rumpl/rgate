@@ -126,7 +126,6 @@ pub enum Dialog {
         interface: Entity<TextareaState>,
         error: Option<String>,
     },
-    #[cfg_attr(not(feature = "icarus"), allow(dead_code))]
     HdlInput {
         net: NetId,
         value: Entity<InputState>,
@@ -167,16 +166,16 @@ pub enum Dialog {
 }
 
 pub struct GateApp {
-    #[cfg(feature = "icarus")]
+    #[cfg(not(target_family = "wasm"))]
     pub lint_due: Option<std::time::Instant>,
-    #[cfg(feature = "icarus")]
+    #[cfg(not(target_family = "wasm"))]
     pub lint_result: Option<(
         Circuit,
         std::sync::mpsc::Receiver<Result<(), rgate_sim::SimError>>,
     )>,
-    #[cfg_attr(not(feature = "icarus"), allow(dead_code))]
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub background_compilation: bool,
-    #[cfg(feature = "icarus")]
+    #[cfg(not(target_family = "wasm"))]
     pub compilation: Option<crate::compilation::Compilation>,
     pub hdl_diagnostics: Vec<crate::hdl_diagnostics::HdlDiagnostic>,
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
@@ -258,10 +257,10 @@ impl GateApp {
         let message_log = crate::input::text_area("", window, cx);
         let layout = crate::view::PanelLayout::new(cx);
         let mut this = Self {background_compilation:false,
-            #[cfg(feature="icarus")]
+            #[cfg(not(target_family = "wasm"))]
             compilation:None,
-            #[cfg(feature="icarus")] lint_due:None,
-            #[cfg(feature="icarus")] lint_result:None,
+            #[cfg(not(target_family = "wasm"))] lint_due:None,
+            #[cfg(not(target_family = "wasm"))] lint_result:None,
             hdl_diagnostics:Vec::new(),diagnostic_line:None,
             #[cfg(not(target_family="wasm"))]
             source_editor:None,
@@ -285,7 +284,7 @@ impl GateApp {
                     .timer(Duration::from_millis(40))
                     .await;
                 let result = entity.update(cx, |this, cx| {
-                    #[cfg(feature = "icarus")]
+                    #[cfg(not(target_family = "wasm"))]
                     {
                         this.poll_compilation(cx);
                         this.poll_source_check(cx);
@@ -387,7 +386,7 @@ impl GateApp {
 
     pub fn changed(&mut self) {
         self.input_swap = None;
-        #[cfg(feature = "icarus")]
+        #[cfg(not(target_family = "wasm"))]
         self.cancel_compilation();
         self.simulation = None;
         self.debug_path = None;
@@ -477,7 +476,7 @@ impl GateApp {
     }
 
     fn execute(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
-        #[cfg(feature = "icarus")]
+        #[cfg(not(target_family = "wasm"))]
         if self.compile_before_command(&command, window, cx) {
             return;
         }
@@ -602,7 +601,7 @@ impl GateApp {
                 }
             }
             Command::Stop => {
-                #[cfg(feature = "icarus")]
+                #[cfg(not(target_family = "wasm"))]
                 self.cancel_compilation();
                 self.remember_view();
                 self.simulation = None;
@@ -725,7 +724,6 @@ impl GateApp {
                 }
             }
             Command::SetHdlInput => {
-                #[cfg(feature = "icarus")]
                 if self.ensure_simulator()
                     && let Some(net) = self
                         .editor
@@ -747,8 +745,6 @@ impl GateApp {
                 } else {
                     self.log("Select an input net in a live Verilog source module.".into());
                 }
-                #[cfg(not(feature = "icarus"))]
-                self.log("Build native RGate with --features icarus to run HDL.".into());
             }
             Command::NewModule => {
                 let mut index = 2;
@@ -1094,16 +1090,7 @@ impl GateApp {
             .iter()
             .any(|m| m.verilog.is_some())
         {
-            #[cfg(feature = "icarus")]
-            {
-                LiveSimulation::verilog(self.editor.circuit(), self.editor.active_module())
-            }
-            #[cfg(not(feature = "icarus"))]
-            {
-                Err(rgate_sim::SimError::Invalid(
-                    "Verilog simulation requires the native icarus feature.".into(),
-                ))
-            }
+            LiveSimulation::verilog(self.editor.circuit(), self.editor.active_module())
         } else {
             Simulator::from_circuit(self.editor.circuit(), self.editor.active_module())
                 .map(Into::into)
@@ -1147,12 +1134,9 @@ impl GateApp {
     pub fn displayed_value(&self, net: NetId) -> Option<&Signal> {
         self.simulation.as_ref()?.value(self.simulation_net(net)?)
     }
-    #[cfg_attr(not(feature = "icarus"), allow(dead_code))]
     pub fn inspect_hdl_signal(&mut self, path: &str, probe: bool, cx: &mut Context<Self>) {
-        #[cfg(feature = "icarus")]
-        {
-            let result = (|| {
-                let sim = self
+        let result = (|| {
+            let sim = self
                     .simulation
                     .as_mut()
                     .ok_or_else(|| rgate_sim::SimError::Invalid("Simulation inactive".into()))?;
@@ -1172,12 +1156,6 @@ impl GateApp {
             if let Err(error) = result {
                 self.error(error);
             }
-        }
-        #[cfg(not(feature = "icarus"))]
-        {
-            let _ = (path, probe);
-            self.log("HDL signal inspection is available on desktop.".into());
-        }
         cx.notify();
     }
     pub fn is_probed(&self, net: NetId) -> bool {
@@ -1288,7 +1266,7 @@ impl GateApp {
     pub fn set_tab(&mut self, tab: WorkspaceTab, window: &mut Window, cx: &mut Context<Self>) {
         match tab {
             WorkspaceTab::Edit => {
-                #[cfg(feature = "icarus")]
+                #[cfg(not(target_family = "wasm"))]
                 self.cancel_compilation();
                 self.remember_view();
                 self.running = false;
@@ -1303,7 +1281,7 @@ impl GateApp {
                 self.tab = tab;
             }
             WorkspaceTab::Simulate => {
-                #[cfg(feature = "icarus")]
+                #[cfg(not(target_family = "wasm"))]
                 if self.background_compilation
                     && self.simulation.is_none()
                     && self
@@ -1741,22 +1719,14 @@ impl GateApp {
                 Ok(())
             })(),
             Some(Dialog::HdlInput { net, value, .. }) => (|| {
-                #[cfg(feature = "icarus")]
-                {
-                    let sim = self.simulation.as_mut().context("Simulation inactive")?;
-                    let gate = sim.source_input(*net).context("Not an interactive input")?;
+                let sim = self.simulation.as_mut().context("Simulation inactive")?;
+                let gate = sim.source_input(*net).context("Not an interactive input")?;
                     let width = sim.value(*net).context("Missing input")?.width();
                     let value =
                         Signal::parse(value.read(cx).value().trim_start_matches("0x"), width, 16)
                             .map_err(anyhow::Error::msg)?;
                     sim.set_input(gate, value)?;
                     Ok(())
-                }
-                #[cfg(not(feature = "icarus"))]
-                {
-                    let _ = (net, value);
-                    anyhow::bail!("Icarus support unavailable")
-                }
             })(),
             Some(Dialog::Symbol(dialog)) => self
                 .editor

@@ -9,10 +9,6 @@ publish = false
 [lints]
 workspace = true
 
-[features]
-default = ["icarus"]
-icarus = ["rgate-ui/icarus"]
-
 [dependencies]
 rgate-ui.workspace = true
 rgate-core.workspace = true

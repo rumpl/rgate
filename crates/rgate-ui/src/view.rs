@@ -941,9 +941,9 @@ impl GateApp {
                 );
             }
         }
-        #[cfg(feature = "icarus")]
+        #[cfg(not(target_family = "wasm"))]
         let compiling = self.compilation.is_some();
-        #[cfg(not(feature = "icarus"))]
+        #[cfg(target_family = "wasm")]
         let compiling = false;
         if compiling || self.simulation.is_some() {
             let state = if compiling {

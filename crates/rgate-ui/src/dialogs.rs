@@ -337,7 +337,6 @@ impl GateApp {
                         .text_color(muted),
                 );
                 let mut list = v_flex().id("hdl-signals-list").h(px(350.0));
-                #[cfg(feature = "icarus")]
                 if let Some(sim) = &self.simulation {
                     let filter = query.read(cx).value().to_ascii_lowercase();
                     for (index, signal) in sim
@@ -380,12 +379,6 @@ impl GateApp {
                                 })),
                         );
                     }
-                }
-                #[cfg(not(feature = "icarus"))]
-                {
-                    list = list.child(
-                        "Open a Verilog circuit in desktop RGate to inspect live HDL signals.",
-                    );
                 }
                 content = content.child(list.overflow_y_scrollbar());
             }

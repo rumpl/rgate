@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() || args == ["--help"] {
         println!(
-            "Icarus Verilog runner (native only)\nUsage: rgate-hdl <project.json> [--vcd <output.vcd>]\nWARNING: trusted HDL only; system tasks can write files or invoke commands."
+            "RGate built-in Verilog runner\nUsage: rgate-hdl <project.json> [--vcd <output.vcd>]"
         );
         return Ok(());
     }
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut backend = project.instantiate(directory)?;
     project.execute(&mut backend)?;
     println!(
-        "{} — {} ns, checks passed ({:.3}s wall time; persistent Icarus VPI)",
+        "{} — {} ns, checks passed ({:.3}s wall time; built-in Rust Verilog)",
         project.top,
         backend.time(),
         start.elapsed().as_secs_f64()

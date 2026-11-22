@@ -82,11 +82,8 @@ impl GateApp {
                 {
                     let source = input.read(cx).value().to_string();
                     this.hdl_diagnostics.clear();
-                    #[cfg(feature = "icarus")]
-                    {
-                        this.lint_due =
-                            Some(std::time::Instant::now() + std::time::Duration::from_millis(350));
-                    }
+                    this.lint_due =
+                        Some(std::time::Instant::now() + std::time::Duration::from_millis(350));
                     if let Err(error) = this
                         .editor
                         .edit_module(|module| module.verilog = Some(source))

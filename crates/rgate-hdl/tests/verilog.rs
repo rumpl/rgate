@@ -1,6 +1,5 @@
-#![cfg(feature = "icarus")]
 use rgate_core::{GateId, Logic, NetId, Signal};
-use rgate_hdl::{HdlProject, HdlSignal, IcarusBackend};
+use rgate_hdl::{HdlProject, HdlSignal, VerilogBackend};
 use rgate_sim::SimulationBackend;
 fn binding(id: u64, path: &str, width: u16, input: bool) -> HdlSignal {
     HdlSignal {
@@ -96,7 +95,7 @@ fn persistent_runtime_does_not_rerun_initial_or_final_and_handles_four_states() 
  reg final_ran=0;final final_ran=1;
  child u();
  endmodule"#;
-    let mut backend = IcarusBackend::new(
+    let mut backend = VerilogBackend::new(
         vec![source.into()],
         "top",
         vec![
@@ -150,7 +149,7 @@ fn persistent_runtime_does_not_rerun_initial_or_final_and_handles_four_states() 
 fn exact_subnanosecond_steps_and_invalid_inputs() {
     let source = "`timescale 1ns/100ps\nmodule top;reg clk=0; always #0.5 clk=~clk; endmodule";
     let mut backend =
-        IcarusBackend::new(vec![source.into()], "top", vec![binding(1, "clk", 1, true)]).unwrap();
+        VerilogBackend::new(vec![source.into()], "top", vec![binding(1, "clk", 1, true)]).unwrap();
     backend.step().unwrap();
     assert_eq!(backend.time_ticks(), 5);
     assert_eq!(backend.ticks_per_nanosecond(), 10);
@@ -166,7 +165,7 @@ fn exact_subnanosecond_steps_and_invalid_inputs() {
     assert!(backend.probe(NetId(99)).is_err());
     assert!(backend.advance(u64::MAX).is_err());
     assert!(
-        IcarusBackend::new(
+        VerilogBackend::new(
             vec![source.into()],
             "top",
             vec![binding(1, "missing", 1, false)]
@@ -178,7 +177,7 @@ fn exact_subnanosecond_steps_and_invalid_inputs() {
 #[test]
 fn binds_internal_signals_without_resetting_runtime() {
     let source = "`timescale 1ns/1ps\nmodule child(input clk);reg [7:0] count=0;always @(posedge clk)count<=count+1;endmodule\nmodule top;reg clk=0;always #5 clk=~clk;child u(clk);endmodule";
-    let mut backend = IcarusBackend::new(vec![source.into()], "top", vec![]).unwrap();
+    let mut backend = VerilogBackend::new(vec![source.into()], "top", vec![]).unwrap();
     backend.advance(16).unwrap();
     let before = backend.time_ticks();
     let (net, _) = backend.bind_discovered("top.u.count", false).unwrap();
@@ -198,10 +197,122 @@ fn binds_internal_signals_without_resetting_runtime() {
 fn cancelled_compilation_does_not_launch_runtime() {
     let token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     assert!(
-        IcarusBackend::new_cancellable(vec!["module top;endmodule".into()], "top", vec![], &token)
+        VerilogBackend::new_cancellable(vec!["module top;endmodule".into()], "top", vec![], &token)
             .err()
             .unwrap()
             .to_string()
             .contains("cancelled")
     );
+}
+
+#[test]
+fn force_release_and_hierarchical_refs_work() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/verilog");
+    let pwm_rtl = std::fs::read_to_string(directory.join("projectf/pwm.sv")).unwrap();
+    let harness = std::fs::read_to_string(directory.join("harnesses/pwm-rgate.sv")).unwrap();
+    let mut backend = VerilogBackend::new(
+        vec![pwm_rtl, harness],
+        "pwm_rgate",
+        vec![
+            binding(1, "RESET_N", 1, true),
+            binding(2, "duty", 8, true),
+            binding(3, "count", 8, false),
+            binding(4, "led", 1, false),
+        ],
+    )
+    .unwrap();
+    // While RESET_N == 0, dimmer.cnt is forced to 0
+    backend.advance(300).unwrap();
+    assert_eq!(backend.value(NetId(3)).unwrap().to_u64(), Some(0));
+    // Release reset: counter starts incrementing on rising edges of CLK (period 100ns)
+    backend
+        .set_input(GateId(1), Signal::from_u64(1, 1))
+        .unwrap();
+    backend.advance(500).unwrap();
+    assert_eq!(backend.value(NetId(3)).unwrap().to_u64(), Some(5));
+    assert_eq!(backend.value(NetId(4)).unwrap().to_u64(), Some(1));
+}
+
+#[test]
+fn lc3_hdl_and_led_chaser_rgate_examples_run() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+    for file in ["lc3-hdl.rgate", "verilog-led-chaser.rgate", "pwm-verilog.rgate"] {
+        let content = std::fs::read_to_string(root.join(file)).unwrap();
+        let circuit = rgate_format::native::decode(&content).unwrap();
+        let exported = rgate_format::export_interactive(&circuit).unwrap();
+        let mut backend = VerilogBackend::new(vec![exported], &circuit.root, vec![]).unwrap();
+        backend.advance(200).unwrap();
+    }
+}
+
+#[test]
+fn functions_generate_indexed_part_select_and_diagnostics() {
+    let source = r#"
+`timescale 1ns/1ps
+module top;
+    parameter N = 4;
+    reg [15:0] data = 16'hA53C;
+    wire [3:0] nibble [0:N-1];
+    reg [3:0] sel = 0;
+    reg [3:0] out_nibble;
+    wire [7:0] rev_byte;
+
+    function [7:0] reverse8(input [7:0] v);
+        integer i;
+        begin
+            for (i = 0; i < 8; i = i + 1)
+                reverse8[i] = v[7 - i];
+        end
+    endfunction
+
+    assign rev_byte = reverse8(data[7:0]);
+
+    generate
+        genvar g;
+        for (g = 0; g < N; g = g + 1) begin : gen_nib
+            wire [3:0] slice = data[g*4 +: 4];
+        end
+    endgenerate
+
+    always @* begin
+        out_nibble = data[sel*4 +: 4];
+    end
+endmodule
+"#;
+    let mut backend = VerilogBackend::new(
+        vec![source.into()],
+        "top",
+        vec![
+            binding(1, "sel", 4, true),
+            binding(2, "out_nibble", 4, false),
+            binding(3, "rev_byte", 8, false),
+        ],
+    )
+    .unwrap();
+    assert_eq!(backend.value(NetId(2)).unwrap().to_u64(), Some(0xC));
+    // 0x3C = 0011_1100 -> reversed = 0011_1100 = 0x3C
+    assert_eq!(backend.value(NetId(3)).unwrap().to_u64(), Some(0x3C));
+    backend
+        .set_input(GateId(1), Signal::from_u64(3, 4))
+        .unwrap();
+    assert_eq!(backend.value(NetId(2)).unwrap().to_u64(), Some(0xA));
+
+    // Check diagnostics formatting `<module>.sv:<line>: ...`
+    let err = rgate_hdl::check_sources(&[(
+        "broken".into(),
+        "module broken;\n  wire a = ;\nendmodule\n".into(),
+    )])
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("broken.sv:2:"), "unexpected diagnostic: {err}");
+}
+
+#[test]
+fn zero_delay_combinational_loop_fails_cleanly() {
+    let source = "module top; reg a = 0; always @(a) a = ~a; initial a = 1; endmodule";
+    let err = VerilogBackend::new(vec![source.into()], "top", vec![])
+        .err()
+        .expect("should error on zero-delay loop")
+        .to_string();
+    assert!(err.contains("delta limit"), "unexpected error: {err}");
 }

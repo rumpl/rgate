@@ -1,27 +1,22 @@
 //! Retain schematic metadata for live navigation; dispatch runtime operations to one engine.
-#[cfg(all(test, feature = "icarus"))]
+#[cfg(test)]
 #[path = "live_simulation_tests.rs"]
 mod tests;
 use rgate_core::{GateId, NetId, Signal};
-#[cfg(feature = "icarus")]
 use rgate_sim::SimulationBackend;
 use rgate_sim::{SimError, Simulator, Trace};
 use std::collections::BTreeMap;
 
 pub struct LiveSimulation {
     schematic: Simulator,
-    #[cfg(feature = "icarus")]
-    hdl: Option<rgate_hdl::IcarusBackend>,
-    #[cfg(feature = "icarus")]
+    hdl: Option<rgate_hdl::VerilogBackend>,
     inputs: BTreeMap<GateId, NetId>,
 }
 impl From<Simulator> for LiveSimulation {
     fn from(schematic: Simulator) -> Self {
         Self {
             schematic,
-            #[cfg(feature = "icarus")]
             hdl: None,
-            #[cfg(feature = "icarus")]
             inputs: BTreeMap::new(),
         }
     }
@@ -39,19 +34,16 @@ impl std::ops::DerefMut for LiveSimulation {
 }
 impl LiveSimulation {
     pub fn backend_name(&self) -> &str {
-        #[cfg(feature = "icarus")]
         if self.hdl.is_some() {
-            return "Icarus VPI";
+            return "Rust Verilog";
         }
         "Rust schematic"
     }
-    #[cfg(feature = "icarus")]
     pub fn discovered_signals(&self) -> &[rgate_hdl::DiscoveredSignal] {
         self.hdl
             .as_ref()
             .map_or(&[], |hdl| hdl.discovered_signals())
     }
-    #[cfg(feature = "icarus")]
     pub fn inspect_hdl(&mut self, path: &str) -> Result<NetId, SimError> {
         let hdl = self
             .hdl
@@ -60,7 +52,6 @@ impl LiveSimulation {
         let (net, _) = hdl.bind_discovered(path, false)?;
         Ok(net)
     }
-    #[cfg(feature = "icarus")]
     pub fn hdl_bound_value(&self, path: &str) -> Option<&Signal> {
         let hdl = self.hdl.as_ref()?;
         let signal = hdl
@@ -70,42 +61,36 @@ impl LiveSimulation {
         hdl.value(signal.net)
     }
     pub fn time(&self) -> u64 {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &self.hdl {
             return hdl.time();
         }
         self.schematic.time()
     }
     pub fn advance(&mut self, ns: u64) -> Result<usize, SimError> {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &mut self.hdl {
             return hdl.advance(ns);
         }
         self.schematic.advance(ns)
     }
     pub fn step(&mut self) -> Result<usize, SimError> {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &mut self.hdl {
             return hdl.step();
         }
         self.schematic.step()
     }
     pub fn value(&self, net: NetId) -> Option<&Signal> {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &self.hdl {
             return hdl.value(net);
         }
         self.schematic.value(net)
     }
     pub fn gate_value(&self, gate: GateId) -> Option<&Signal> {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &self.hdl {
             return hdl.value(*self.inputs.get(&gate)?);
         }
         self.schematic.gate_value(gate)
     }
     pub fn is_input(&self, gate: GateId) -> bool {
-        #[cfg(feature = "icarus")]
         if self.hdl.is_some() {
             return self.inputs.contains_key(&gate);
         }
@@ -113,14 +98,12 @@ impl LiveSimulation {
     }
 
     pub fn set_input(&mut self, gate: GateId, value: Signal) -> Result<(), SimError> {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &mut self.hdl {
             return hdl.set_input(gate, value);
         }
         self.schematic.set_input(gate, value)
     }
     pub fn toggle_input(&mut self, gate: GateId) -> Result<(), SimError> {
-        #[cfg(feature = "icarus")]
         if self.hdl.is_some() {
             let value = self.gate_value(gate).ok_or(SimError::NotInput(gate))?;
             let next = if value.to_u64() == Some(0) { 1 } else { 0 };
@@ -129,14 +112,12 @@ impl LiveSimulation {
         self.schematic.toggle_input(gate)
     }
     pub fn probe(&mut self, net: NetId) -> Result<(), SimError> {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &mut self.hdl {
             return hdl.probe(net);
         }
         self.schematic.probe(net)
     }
     pub fn unprobe(&mut self, net: NetId) {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &mut self.hdl {
             hdl.unprobe(net);
             return;
@@ -144,7 +125,6 @@ impl LiveSimulation {
         self.schematic.unprobe(net);
     }
     pub fn label_probe(&mut self, net: NetId, name: String) {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &mut self.hdl {
             hdl.label_probe(net, name);
             return;
@@ -152,13 +132,11 @@ impl LiveSimulation {
         self.schematic.label_probe(net, name);
     }
     pub fn traces(&self) -> &BTreeMap<NetId, Trace> {
-        #[cfg(feature = "icarus")]
         if let Some(hdl) = &self.hdl {
             return hdl.traces();
         }
         self.schematic.traces()
     }
-    #[cfg(feature = "icarus")]
     pub fn verilog(circuit: &rgate_core::Circuit, root: &str) -> Result<Self, SimError> {
         Self::verilog_cancellable(
             circuit,
@@ -166,7 +144,6 @@ impl LiveSimulation {
             &std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
     }
-    #[cfg(feature = "icarus")]
     pub fn verilog_cancellable(
         circuit: &rgate_core::Circuit,
         root: &str,
@@ -280,14 +257,13 @@ impl LiveSimulation {
         } else {
             root
         };
-        let hdl = rgate_hdl::IcarusBackend::new_cancellable(sources, top, bindings, cancel)?;
+        let hdl = rgate_hdl::VerilogBackend::new_cancellable(sources, top, bindings, cancel)?;
         Ok(Self {
             schematic,
             hdl: Some(hdl),
             inputs,
         })
     }
-    #[cfg(feature = "icarus")]
     pub fn source_input(&self, net: NetId) -> Option<GateId> {
         self.inputs
             .iter()

@@ -5,11 +5,7 @@ root="${0:A:h:h}"
 profile="${1:-release}"
 [[ "$profile" == release || "$profile" == dev ]] || { print -u2 "Usage: $0 [release|dev]"; exit 1; }
 export CARGO_TARGET_DIR="$root/target"
-feature="${2:-}"
-[[ -z "$feature" || "$feature" == icarus ]] || { print -u2 "Usage: $0 [release|dev] [icarus]"; exit 1; }
-extra=()
-[[ "$feature" == icarus ]] && extra=(--features icarus)
-cargo build --locked --manifest-path "$root/Cargo.toml" -p rgate --profile "$profile" "${extra[@]}"
+cargo build --locked --manifest-path "$root/Cargo.toml" -p rgate --profile "$profile"
 output=release
 [[ "$profile" == dev ]] && output=debug
 bundle="$root/target/RGate.app"

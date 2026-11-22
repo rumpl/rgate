@@ -37,7 +37,7 @@ impl HdlProject {
         serde_json::from_str(&content)
             .map_err(|e| SimError::Invalid(format!("{}: {e}", path.display())))
     }
-    pub fn instantiate(&self, directory: &Path) -> Result<crate::IcarusBackend, SimError> {
+    pub fn instantiate(&self, directory: &Path) -> Result<crate::VerilogBackend, SimError> {
         let sources = self
             .sources
             .iter()
@@ -46,7 +46,7 @@ impl HdlProject {
                     .map_err(|e| SimError::Invalid(format!("{path}: {e}")))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        crate::IcarusBackend::new(
+        crate::VerilogBackend::new(
             sources,
             &self.top,
             self.signals

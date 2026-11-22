@@ -1,4 +1,4 @@
-//! Icarus Verilog integration, independent of the schematic simulator and UI.
+//! In-process pure-Rust Verilog / SystemVerilog parser, elaborator, and event-driven simulator.
 use rgate_core::{GateId, NetId};
 
 #[derive(Clone, Debug)]
@@ -11,13 +11,15 @@ pub struct HdlSignal {
     pub input: Option<GateId>,
 }
 
-#[cfg(all(feature = "icarus", target_arch = "wasm32"))]
-compile_error!("Icarus is native-only; disable the icarus feature for WASM.");
-#[cfg(feature = "icarus")]
-mod icarus_backend;
-#[cfg(feature = "icarus")]
-pub use icarus_backend::{DiscoveredSignal, IcarusBackend, check_sources};
-#[cfg(feature = "icarus")]
+pub mod ast;
+mod backend;
+pub mod elaborate;
+pub mod lexer;
+pub mod parser;
+pub mod preprocess;
 mod project;
-#[cfg(feature = "icarus")]
+pub mod sim;
+pub mod value;
+
+pub use backend::{DiscoveredSignal, VerilogBackend, check_sources};
 pub use project::{Action, HdlProject, ProjectSignal};
