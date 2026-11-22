@@ -214,19 +214,8 @@ impl Simulator {
         let Some(net) = gate.pin(name).and_then(|pin| pin.net) else {
             return Signal::filled(gate.width, Logic::HighZ);
         };
-        self.drivers
-            .iter()
-            .filter(|((driver, pin), _)| {
-                *driver != index
-                    && self.flattened.gates[*driver]
-                        .pin(pin)
-                        .and_then(|pin| pin.net)
-                        == Some(net)
-            })
-            .fold(
-                Signal::filled(gate.width, Logic::HighZ),
-                |value, (_, drive)| value.zip(drive, Logic::resolve),
-            )
+        self.nets
+            .resolve_external(&self.flattened, index, net, gate.width)
     }
 
     fn evaluate_terminal(&mut self, index: usize) -> Vec<(String, Signal)> {

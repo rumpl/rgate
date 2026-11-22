@@ -1,17 +1,18 @@
 mod backend;
 mod components;
 mod eval;
+mod nets;
+mod queue;
 mod vcd;
 mod vga;
 pub use backend::SimulationBackend;
 pub use vcd::export_vcd;
 pub use vga::VgaFrame;
 
+use nets::NetStore;
+use queue::{EventKind, EventQueue};
 use rgate_core::{Circuit, Direction, GateId, GateKind, Logic, Module, NetId, Signal};
-use std::{
-    cmp::{Ordering, Reverse},
-    collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap},
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use thiserror::Error;
 
 const MAX_EVENTS_PER_ADVANCE: usize = 100_000;
@@ -23,7 +24,7 @@ pub struct Transition {
     pub value: Signal,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Trace {
     pub net: NetId,
     pub name: String,
@@ -35,58 +36,16 @@ pub struct Trace {
 pub enum SimError {
     #[error("invalid circuit: {0}")]
     Invalid(String),
-    #[error("simulation exceeded {MAX_EVENTS_PER_ADVANCE} events; possible oscillation")]
-    Oscillation,
     #[error("gate {} is not an interactive input", .0.0)]
     NotInput(GateId),
-    #[error("simulation time cannot move backwards")]
+    #[error("cannot step backwards in time")]
     Backwards,
+    #[error("simulation exceeded {MAX_EVENTS_PER_ADVANCE} events (possible zero-delay oscillation)")]
+    Oscillation,
     #[error("simulation time overflow")]
     TimeOverflow,
     #[error("unknown net {}", .0.0)]
     UnknownNet(NetId),
-}
-
-#[derive(Clone, Debug)]
-enum EventKind {
-    Drive {
-        gate: usize,
-        pin: String,
-        value: Signal,
-        generation: u64,
-    },
-    Clock(usize),
-    TerminalCapture {
-        gate: usize,
-        byte: u8,
-    },
-    TerminalConsume {
-        gate: usize,
-    },
-}
-
-#[derive(Clone, Debug)]
-struct Event {
-    time: u64,
-    sequence: u64,
-    kind: EventKind,
-}
-
-impl PartialEq for Event {
-    fn eq(&self, other: &Self) -> bool {
-        (self.time, self.sequence) == (other.time, other.sequence)
-    }
-}
-impl Eq for Event {}
-impl PartialOrd for Event {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for Event {
-    fn cmp(&self, other: &Self) -> Ordering {
-        (self.time, self.sequence).cmp(&(other.time, other.sequence))
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -111,15 +70,9 @@ pub struct Simulator {
     scopes: HashMap<String, rgate_core::InstanceScope>,
     root_path: String,
     time: u64,
-    sequence: u64,
-    queue: BinaryHeap<Reverse<Event>>,
+    events: EventQueue,
+    nets: NetStore,
     states: Vec<GateState>,
-    values: HashMap<NetId, Signal>,
-    drivers: HashMap<(usize, String), Signal>,
-    intended: HashMap<(usize, String), Signal>,
-    generations: HashMap<(usize, String), u64>,
-    fanout: HashMap<NetId, Vec<usize>>,
-    traces: BTreeMap<NetId, Trace>,
     warnings: Vec<String>,
 }
 
@@ -183,11 +136,7 @@ impl Simulator {
             .validate()
             .map_err(|error| SimError::Invalid(error.to_string()))?;
         let states = module.gates.iter().map(GateState::extended).collect();
-        let values = module
-            .nets
-            .iter()
-            .map(|net| (net.id, Signal::filled(net.width, Logic::HighZ)))
-            .collect();
+        let nets = NetStore::from_module(module);
         let mut simulator = Self {
             flattened: module.clone(),
             source,
@@ -201,32 +150,12 @@ impl Simulator {
             )]),
             root_path: module.name.clone(),
             time: 0,
-            sequence: 0,
-            queue: BinaryHeap::new(),
+            events: EventQueue::default(),
+            nets,
             states,
-            values,
-            drivers: HashMap::new(),
-            intended: HashMap::new(),
-            generations: HashMap::new(),
-            fanout: HashMap::new(),
-            traces: BTreeMap::new(),
             warnings: Vec::new(),
         };
         for (index, gate) in module.gates.iter().enumerate() {
-            for pin in &gate.pins {
-                if let Some(net) = pin.net {
-                    if pin.direction != Direction::Input {
-                        let width = module.net(net).unwrap().width;
-                        simulator.drivers.insert(
-                            (index, pin.name.clone()),
-                            Signal::filled(width, Logic::HighZ),
-                        );
-                    }
-                    if pin.direction != Direction::Output {
-                        simulator.fanout.entry(net).or_default().push(index);
-                    }
-                }
-            }
             if matches!(gate.kind, GateKind::Unsupported(_) | GateKind::Module(_)) {
                 simulator.warnings.push(format!(
                     "{} ({}) is not simulated; outputs remain X",
@@ -236,7 +165,7 @@ impl Simulator {
             }
             if gate.kind == GateKind::Clock {
                 simulator.states[index].source = Signal::from_u64(0, 1);
-                simulator.push(
+                simulator.events.push(
                     gate.config
                         .clock_phase
                         .saturating_add(gate.clock_low_time()),
@@ -286,10 +215,10 @@ impl Simulator {
         &self.warnings
     }
     pub fn traces(&self) -> &BTreeMap<NetId, Trace> {
-        &self.traces
+        self.nets.traces()
     }
     pub fn value(&self, net: NetId) -> Option<&Signal> {
-        self.values.get(&net)
+        self.nets.value(net)
     }
 
     pub fn gate_value(&self, id: GateId) -> Option<&Signal> {
@@ -305,33 +234,15 @@ impl Simulator {
     }
 
     pub fn probe(&mut self, net: NetId) -> Result<(), SimError> {
-        if self.traces.contains_key(&net) {
-            return Ok(());
-        }
-        let definition = self.flattened.net(net).ok_or(SimError::UnknownNet(net))?;
-        self.traces.insert(
-            net,
-            Trace {
-                net,
-                name: definition.name.clone(),
-                width: definition.width,
-                transitions: vec![Transition {
-                    time: self.time,
-                    value: self.values[&net].clone(),
-                }],
-            },
-        );
-        Ok(())
+        self.nets.probe(&self.flattened, net, self.time)
     }
 
     pub fn label_probe(&mut self, net: NetId, name: String) {
-        if let Some(trace) = self.traces.get_mut(&net) {
-            trace.name = name;
-        }
+        self.nets.label_probe(net, name);
     }
 
     pub fn unprobe(&mut self, net: NetId) {
-        self.traces.remove(&net);
+        self.nets.unprobe(net);
     }
 
     pub fn is_input(&self, id: GateId) -> bool {
@@ -387,9 +298,8 @@ impl Simulator {
 
     pub fn step(&mut self) -> Result<usize, SimError> {
         let target = self
-            .queue
-            .peek()
-            .map(|event| event.0.time)
+            .events
+            .next_time()
             .unwrap_or(self.time.checked_add(1).ok_or(SimError::TimeOverflow)?);
         self.advance_to(target)
     }
@@ -399,24 +309,18 @@ impl Simulator {
             return Err(SimError::Backwards);
         }
         let mut processed = 0;
-        while self
-            .queue
-            .peek()
-            .is_some_and(|event| event.0.time <= target)
-        {
-            self.time = self.queue.peek().unwrap().0.time;
+        while let Some(next_time) = self.events.next_time() {
+            if next_time > target {
+                break;
+            }
+            self.time = next_time;
             let mut affected = BTreeSet::new();
-            while self
-                .queue
-                .peek()
-                .is_some_and(|event| event.0.time == self.time)
-            {
+            while let Some(kind) = self.events.pop_at(self.time) {
                 if processed >= MAX_EVENTS_PER_ADVANCE {
                     return Err(SimError::Oscillation);
                 }
                 processed += 1;
-                let event = self.queue.pop().unwrap().0;
-                match event.kind {
+                match kind {
                     EventKind::Drive {
                         gate,
                         pin,
@@ -424,14 +328,16 @@ impl Simulator {
                         generation,
                     } => {
                         let key = (gate, pin.clone());
-                        if self.generations.get(&key).copied().unwrap_or(0) != generation {
+                        if !self.events.is_current_generation(&key, generation) {
                             continue;
                         }
                         if let Some(net) =
                             self.flattened.gates[gate].pin(&pin).and_then(|pin| pin.net)
                         {
-                            self.drivers
-                                .insert(key, value.resized(self.flattened.net(net).unwrap().width));
+                            self.nets.set_driver(
+                                key,
+                                value.resized(self.flattened.net(net).unwrap().width),
+                            );
                             affected.insert(net);
                         }
                     }
@@ -456,47 +362,14 @@ impl Simulator {
                                 self.flattened.gates[index].clock_low_time()
                             })
                             .ok_or(SimError::TimeOverflow)?;
-                        self.push(next, EventKind::Clock(index));
+                        self.events.push(next, EventKind::Clock(index));
                     }
                 }
             }
             let mut gates = BTreeSet::new();
             for net in affected {
-                let width = self.flattened.net(net).unwrap().width;
-                let resolved = self
-                    .drivers
-                    .iter()
-                    .filter(|((index, pin), _)| {
-                        self.flattened.gates[*index]
-                            .pin(pin)
-                            .and_then(|pin| pin.net)
-                            == Some(net)
-                    })
-                    .fold(Signal::filled(width, Logic::HighZ), |value, (_, drive)| {
-                        value.zip(drive, Logic::resolve)
-                    });
-                if self.values[&net] != resolved {
-                    self.values.insert(net, resolved.clone());
-                    if let Some(trace) = self.traces.get_mut(&net) {
-                        if trace
-                            .transitions
-                            .last()
-                            .is_some_and(|change| change.time == self.time)
-                        {
-                            trace.transitions.last_mut().unwrap().value = resolved;
-                        } else {
-                            trace.transitions.push(Transition {
-                                time: self.time,
-                                value: resolved,
-                            });
-                            if trace.transitions.len() > MAX_TRACE_CHANGES {
-                                trace.transitions.remove(0);
-                            }
-                        }
-                    }
-                    if let Some(listeners) = self.fanout.get(&net) {
-                        gates.extend(listeners);
-                    }
+                if let Some(listeners) = self.nets.resolve_net(&self.flattened, net, self.time) {
+                    gates.extend(listeners);
                 }
             }
             for index in gates {
@@ -569,13 +442,8 @@ impl Simulator {
         self.advance_to(self.time).map(|_| ())
     }
 
-    fn push(&mut self, time: u64, kind: EventKind) {
-        self.sequence += 1;
-        self.queue.push(Reverse(Event {
-            time,
-            sequence: self.sequence,
-            kind,
-        }));
+    pub(crate) fn push(&mut self, time: u64, kind: EventKind) {
+        self.events.push(time, kind);
     }
 }
 

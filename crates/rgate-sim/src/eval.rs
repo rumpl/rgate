@@ -1,11 +1,11 @@
-use crate::{EventKind, SimError, Simulator};
+use crate::{SimError, Simulator};
 use rgate_core::{Direction, Gate, GateKind, Logic, Signal};
 
 impl Simulator {
     pub(crate) fn input(&self, gate: &Gate, name: &str) -> Signal {
         gate.pin(name)
             .and_then(|pin| pin.net)
-            .and_then(|net| self.values.get(&net))
+            .and_then(|net| self.nets.value(net))
             .cloned()
             .unwrap_or_else(|| Signal::filled(gate.pin_width(name), Logic::HighZ))
     }
@@ -169,24 +169,8 @@ impl Simulator {
             outputs = self.evaluate_component(index);
         }
         for (pin, value) in outputs {
-            let key = (index, pin.clone());
-            if self.intended.get(&key) == Some(&value) {
-                continue;
-            }
-            self.intended.insert(key.clone(), value.clone());
-            let generation = self.generations.entry(key).or_default();
-            *generation += 1;
-            let generation = *generation;
-            let time = self.time.checked_add(delay).ok_or(SimError::TimeOverflow)?;
-            self.push(
-                time,
-                EventKind::Drive {
-                    gate: index,
-                    pin,
-                    value,
-                    generation,
-                },
-            );
+            self.events
+                .schedule_drive(self.time, delay, index, pin, value)?;
         }
         Ok(())
     }
