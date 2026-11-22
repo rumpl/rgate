@@ -193,7 +193,7 @@ impl GateApp {
             let probed = self.sim.is_probed(id);
             list = list.child(
                 ListItem::new(SharedString::from(format!("net-{}", id.0)))
-                    .selected(self.editor.selected_net == Some(id))
+                    .selected(self.editor.selection.net == Some(id))
                     .py_0p5()
                     .child(
                         h_flex()
@@ -239,9 +239,7 @@ impl GateApp {
                             ),
                     )
                     .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                        this.editor.selected_net = Some(id);
-                        this.editor.selection.clear();
-                        this.editor.selected_wires.clear();
+                        this.editor.selection.select_net(id);
                         if event.click_count() >= 2 {
                             this.toggle_probe(id, cx);
                         }

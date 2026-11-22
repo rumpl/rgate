@@ -1,4 +1,5 @@
 mod edit;
+mod history;
 mod organization;
 mod routing;
 mod selection;
@@ -7,12 +8,14 @@ mod wiring;
 #[cfg(test)]
 mod tests;
 
+pub use history::History;
 pub use organization::{Align, Distribute, SearchResult, SearchTarget, search};
-use rgate_core::{Circuit, GateId, GateKind, Module, NetId, PinRef, Point, Rect, WireId};
-use std::collections::{BTreeSet, HashMap};
-use thiserror::Error;
+pub use selection::Selection;
+pub use wiring::WireSegmentDrag;
 
-const HISTORY_LIMIT: usize = 128;
+use rgate_core::{Circuit, GateId, GateKind, Module, NetId, PinRef, Point, Rect, WireId};
+use std::collections::HashMap;
+use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tool {
@@ -39,15 +42,6 @@ pub struct WireDraft {
     pub net: Option<NetId>,
     pub start: Option<PinRef>,
     pub points: Vec<Point>,
-}
-
-#[derive(Clone, Debug)]
-pub struct WireSegmentDrag {
-    wire: WireId,
-    points: Vec<Point>,
-    segment: usize,
-    horizontal: bool,
-    anchor: Point,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -113,15 +107,9 @@ pub enum EditError {
 #[derive(Clone, Debug)]
 pub struct Editor {
     circuit: Circuit,
-    saved: Circuit,
-    recovered: bool,
+    history: History,
     active: String,
-    undo: Vec<Circuit>,
-    redo: Vec<Circuit>,
-    gesture: Option<Circuit>,
-    pub selection: BTreeSet<GateId>,
-    pub selected_net: Option<NetId>,
-    pub selected_wires: BTreeSet<WireId>,
+    pub selection: Selection,
     pub tool: Tool,
     pub viewport: Viewport,
     pub grid: f32,
@@ -135,17 +123,12 @@ impl Editor {
         circuit
             .validate()
             .map_err(|error| EditError::Invalid(error.to_string()))?;
+        let history = History::new(circuit.clone());
         Ok(Self {
             active: circuit.root.clone(),
-            saved: circuit.clone(),
-            recovered: false,
             circuit,
-            undo: Vec::new(),
-            redo: Vec::new(),
-            gesture: None,
-            selection: BTreeSet::new(),
-            selected_net: None,
-            selected_wires: BTreeSet::new(),
+            history,
+            selection: Selection::default(),
             tool: Tool::Select,
             viewport: Viewport::default(),
             grid: 5.0,
@@ -170,24 +153,54 @@ impl Editor {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.recovered || self.circuit != self.saved
+        self.history.is_dirty(&self.circuit)
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
+        self.history.can_undo()
     }
 
     pub fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
+        self.history.can_redo()
     }
 
     pub fn mark_recovered(&mut self) {
-        self.recovered = true;
+        self.history.mark_recovered();
     }
 
     pub fn mark_saved(&mut self) {
-        self.saved = self.circuit.clone();
-        self.recovered = false;
+        self.history.mark_saved(&self.circuit);
+    }
+
+    pub fn snapped(&self, point: Point) -> Point {
+        if self.snap {
+            point.snapped(self.grid)
+        } else {
+            point
+        }
+    }
+
+    pub fn select(&mut self, gate: GateId, additive: bool) {
+        self.selection.select_gate(gate, additive);
+    }
+
+    pub fn select_wire(&mut self, id: WireId, additive: bool) {
+        let module = self.circuit.module(&self.active).expect("validated active module");
+        self.selection.select_wire(module, id, additive);
+    }
+
+    pub fn select_all(&mut self) {
+        let module = self.circuit.module(&self.active).expect("validated active module");
+        self.selection.select_all(module);
+    }
+
+    pub fn select_region(&mut self, bounds: Rect, additive: bool) {
+        let module = self.circuit.module(&self.active).expect("validated active module");
+        self.selection.select_region(module, bounds, additive);
+    }
+
+    pub fn hit_test(&self, point: Point, tolerance: f32) -> Option<Hit> {
+        selection::hit_test(self.module(), point, tolerance)
     }
 
     pub fn switch_module(&mut self, name: &str) -> Result<(), EditError> {
@@ -197,8 +210,6 @@ impl Editor {
         self.finish_gesture();
         self.active = name.into();
         self.selection.clear();
-        self.selected_wires.clear();
-        self.selected_net = None;
         self.draft = None;
         Ok(())
     }
@@ -220,7 +231,7 @@ impl Editor {
         self.finish_gesture();
         let before = self.circuit.clone();
         self.circuit.modules.push(module);
-        self.record(before);
+        self.history.record(before);
         self.switch_module(&name)
     }
 
@@ -264,7 +275,7 @@ impl Editor {
             return Err(EditError::Invalid(error.to_string()));
         }
         if before != self.circuit {
-            self.record(before);
+            self.history.record(before);
         }
         Ok(())
     }
@@ -319,20 +330,15 @@ impl Editor {
     }
 
     pub fn begin_gesture(&mut self) {
-        self.finish_gesture();
-        self.gesture = Some(self.circuit.clone());
+        self.history.begin_gesture(&self.circuit);
     }
 
     pub fn finish_gesture(&mut self) {
-        if let Some(before) = self.gesture.take()
-            && before != self.circuit
-        {
-            self.record(before);
-        }
+        self.history.finish_gesture(&self.circuit);
     }
 
     pub fn cancel(&mut self) {
-        if let Some(before) = self.gesture.take() {
+        if let Some(before) = self.history.cancel_gesture() {
             self.circuit = before;
         }
         self.draft = None;
@@ -340,26 +346,22 @@ impl Editor {
     }
 
     pub fn undo(&mut self) {
-        self.finish_gesture();
-        if let Some(previous) = self.undo.pop() {
-            self.redo
-                .push(std::mem::replace(&mut self.circuit, previous));
+        if self.history.undo(&mut self.circuit) {
             self.clean_selection();
         }
     }
 
     pub fn redo(&mut self) {
-        if let Some(next) = self.redo.pop() {
-            self.undo.push(std::mem::replace(&mut self.circuit, next));
+        if self.history.redo(&mut self.circuit) {
             self.clean_selection();
         }
     }
 
-    fn record(&mut self, before: Circuit) {
-        self.undo.push(before);
-        if self.undo.len() > HISTORY_LIMIT {
-            self.undo.remove(0);
+    fn clean_selection(&mut self) {
+        if self.circuit.module(&self.active).is_none() {
+            self.active = self.circuit.root.clone();
         }
-        self.redo.clear();
+        self.selection.clear();
+        self.draft = None;
     }
 }

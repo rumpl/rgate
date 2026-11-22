@@ -272,7 +272,8 @@ impl GateApp {
                 if self.ensure_simulator()
                     && let Some(net) = self
                         .editor
-                        .selected_net
+                        .selection
+                        .net
                         .and_then(|n| self.sim.scoped_net(n))
                     && self
                         .sim
@@ -309,7 +310,7 @@ impl GateApp {
                 });
             }
             Command::Port(direction) => {
-                if let Some(net) = self.editor.selected_net {
+                if let Some(net) = self.editor.selection.net {
                     if let Err(error) = self.editor.edit_module(|module| {
                         if let Some(net) = module
                             .nets
@@ -387,10 +388,10 @@ impl GateApp {
             self.log("Stop simulation before swapping inputs.".into());
             return;
         }
-        if self.editor.selection.len() != 1 {
+        if self.editor.selection.gates.len() != 1 {
             return;
         }
-        let id = *self.editor.selection.iter().next().unwrap();
+        let id = *self.editor.selection.gates.iter().next().unwrap();
         let inputs = self
             .editor
             .module()

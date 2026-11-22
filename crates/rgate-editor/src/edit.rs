@@ -50,7 +50,7 @@ impl Editor {
     }
 
     pub fn resize_frame(&mut self, id: GateId, width: f32, height: f32) {
-        if self.gesture.is_none() || !width.is_finite() || !height.is_finite() {
+        if !self.history.in_gesture() || !width.is_finite() || !height.is_finite() {
             return;
         }
         let width = if self.snap {
@@ -86,14 +86,14 @@ impl Editor {
     }
 
     pub fn move_selection(&mut self, delta: Point) {
-        if self.gesture.is_none() {
+        if !self.history.in_gesture() {
             self.begin_gesture();
         }
         if !delta.is_finite() {
             return;
         }
-        let selected = self.selection.clone();
-        let selected_wires = self.selected_wires.clone();
+        let selected = self.selection.gates.clone();
+        let selected_wires = self.selection.wires.clone();
         let module = self.circuit.module_mut(&self.active).unwrap();
         let old = endpoint_positions(module, &selected);
         for gate in &mut module.gates {
@@ -143,7 +143,7 @@ impl Editor {
     }
 
     pub fn rotate_selection(&mut self, clockwise: bool) -> Result<(), EditError> {
-        let selected = self.selection.clone();
+        let selected = self.selection.gates.clone();
         self.edit_module(|module| {
             let old = endpoint_positions(module, &selected);
             for gate in &mut module.gates {
@@ -198,10 +198,10 @@ impl Editor {
     }
 
     pub fn delete_selection(&mut self) -> Result<(), EditError> {
-        let selected = self.selection.clone();
-        let wires = self.selected_wires.clone();
+        let selected = self.selection.gates.clone();
+        let wires = self.selection.wires.clone();
         let net = if wires.is_empty() {
-            self.selected_net
+            self.selection.net
         } else {
             None
         };
@@ -291,8 +291,6 @@ impl Editor {
             }
         })?;
         self.selection.clear();
-        self.selected_wires.clear();
-        self.selected_net = None;
         Ok(())
     }
 
@@ -311,15 +309,15 @@ impl Editor {
         let mut copied = self.module().clone();
         copied
             .gates
-            .retain(|gate| self.selection.contains(&gate.id));
+            .retain(|gate| self.selection.gates.contains(&gate.id));
         copied.wires.retain(|wire| {
             wire.start
                 .as_ref()
-                .is_some_and(|pin| self.selection.contains(&pin.gate))
+                .is_some_and(|pin| self.selection.gates.contains(&pin.gate))
                 && wire
                     .end
                     .as_ref()
-                    .is_some_and(|pin| self.selection.contains(&pin.gate))
+                    .is_some_and(|pin| self.selection.gates.contains(&pin.gate))
         });
         let nets = copied
             .wires
@@ -383,7 +381,8 @@ impl Editor {
                 module.wires.push(wire);
             }
         })?;
-        self.selection = selected;
+        self.selection.clear();
+        self.selection.gates = selected;
         Ok(())
     }
 }

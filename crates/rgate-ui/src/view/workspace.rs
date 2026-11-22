@@ -194,7 +194,7 @@ impl GateApp {
             rows = rows.child(
                 ListItem::new(SharedString::from(format!("interface-net-{}", id.0)))
                     .text_sm()
-                    .selected(self.editor.selected_net == Some(id))
+                    .selected(self.editor.selection.net == Some(id))
                     .child(
                         h_flex()
                             .w_full()
@@ -214,7 +214,7 @@ impl GateApp {
                             })),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.editor.selected_net = Some(id);
+                        this.editor.selection.net = Some(id);
                         cx.notify();
                     })),
             );

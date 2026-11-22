@@ -261,9 +261,7 @@ impl GateApp {
                 self.editor.module().gate(id).map(|gate| gate.position)
             }
             rgate_editor::SearchTarget::Net(id) => {
-                self.editor.selection.clear();
-                self.editor.selected_wires.clear();
-                self.editor.selected_net = Some(id);
+                self.editor.selection.select_net(id);
                 self.editor
                     .module()
                     .wires

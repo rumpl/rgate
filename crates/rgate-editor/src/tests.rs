@@ -1,6 +1,7 @@
 use crate::wiring::{endpoint_positions, update_wire_endpoints};
 use crate::*;
 use rgate_core::{Direction, Net, Signal, demo};
+use std::collections::BTreeSet;
 
 fn editor() -> Editor {
     Editor::new(demo::full_adder()).unwrap()
@@ -444,17 +445,17 @@ fn removing_both_gates_cleans_wires_simultaneously_or_separately() {
 fn wire_click_shift_toggle_and_region_select_work_independently_of_gates() {
     let mut editor = editor();
     editor.select_wire(WireId(1), false);
-    assert_eq!(editor.selected_wires, BTreeSet::from([WireId(1)]));
+    assert_eq!(editor.selection.wires, BTreeSet::from([WireId(1)]));
     editor.select_wire(WireId(2), true);
-    assert_eq!(editor.selected_wires.len(), 2);
+    assert_eq!(editor.selection.wires.len(), 2);
     editor.select_wire(WireId(1), true);
-    assert_eq!(editor.selected_wires, BTreeSet::from([WireId(2)]));
+    assert_eq!(editor.selection.wires, BTreeSet::from([WireId(2)]));
     editor.select_region(
         Rect::from_points(Point::new(160.0, 123.0), Point::new(175.0, 131.0)),
         false,
     );
-    assert_eq!(editor.selected_wires, BTreeSet::from([WireId(1)]));
-    assert!(editor.selection.is_empty());
+    assert_eq!(editor.selection.wires, BTreeSet::from([WireId(1)]));
+    assert!(editor.selection.gates.is_empty());
 }
 
 mod port_marker_tests {

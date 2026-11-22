@@ -1,40 +1,60 @@
-use crate::{Editor, Hit};
-use rgate_core::{GateId, GateKind, PinRef, Point, Rect, WireId, segment_distance};
+use crate::Hit;
+use rgate_core::{GateId, GateKind, Module, NetId, PinRef, Point, Rect, WireId, segment_distance};
+use std::collections::BTreeSet;
 
-impl Editor {
-    pub fn snapped(&self, point: Point) -> Point {
-        if self.snap {
-            point.snapped(self.grid)
-        } else {
-            point
-        }
+/// Owns the currently selected gates, wires, and net with consistent toggle/clear invariants.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Selection {
+    pub gates: BTreeSet<GateId>,
+    pub wires: BTreeSet<WireId>,
+    pub net: Option<NetId>,
+}
+
+impl Selection {
+    pub fn clear(&mut self) {
+        self.gates.clear();
+        self.wires.clear();
+        self.net = None;
     }
 
-    pub fn select(&mut self, gate: GateId, additive: bool) {
-        if !additive {
-            self.selection.clear();
-            self.selected_wires.clear();
-        }
-        if additive && self.selection.contains(&gate) {
-            self.selection.remove(&gate);
-        } else {
-            self.selection.insert(gate);
-        }
-        self.selected_net = None;
+    pub fn select_net(&mut self, net: NetId) {
+        self.gates.clear();
+        self.wires.clear();
+        self.net = Some(net);
     }
 
-    pub fn select_wire(&mut self, id: WireId, additive: bool) {
+    pub fn select_wire_single(&mut self, id: WireId, net: NetId) {
+        self.gates.clear();
+        self.wires.clear();
+        self.wires.insert(id);
+        self.net = Some(net);
+    }
+
+    pub fn select_gate(&mut self, gate: GateId, additive: bool) {
         if !additive {
-            self.selection.clear();
-            self.selected_wires.clear();
+            self.gates.clear();
+            self.wires.clear();
         }
-        if additive && self.selected_wires.contains(&id) {
-            self.selected_wires.remove(&id);
+        if additive && self.gates.contains(&gate) {
+            self.gates.remove(&gate);
         } else {
-            self.selected_wires.insert(id);
+            self.gates.insert(gate);
         }
-        self.selected_net = if self.selected_wires.contains(&id) {
-            self.module()
+        self.net = None;
+    }
+
+    pub fn select_wire(&mut self, module: &Module, id: WireId, additive: bool) {
+        if !additive {
+            self.gates.clear();
+            self.wires.clear();
+        }
+        if additive && self.wires.contains(&id) {
+            self.wires.remove(&id);
+        } else {
+            self.wires.insert(id);
+        }
+        self.net = if self.wires.contains(&id) {
+            module
                 .wires
                 .iter()
                 .find(|wire| wire.id == id)
@@ -44,27 +64,24 @@ impl Editor {
         };
     }
 
-    pub fn select_all(&mut self) {
-        self.selection = self.module().gates.iter().map(|gate| gate.id).collect();
-        self.selected_wires = self.module().wires.iter().map(|wire| wire.id).collect();
-        self.selected_net = None;
+    pub fn select_all(&mut self, module: &Module) {
+        self.gates = module.gates.iter().map(|gate| gate.id).collect();
+        self.wires = module.wires.iter().map(|wire| wire.id).collect();
+        self.net = None;
     }
 
-    pub fn select_region(&mut self, bounds: Rect, additive: bool) {
+    pub fn select_region(&mut self, module: &Module, bounds: Rect, additive: bool) {
         if !additive {
-            self.selection.clear();
-            self.selected_wires.clear();
+            self.gates.clear();
+            self.wires.clear();
         }
-        let ids = self
-            .module()
+        let ids = module
             .gates
             .iter()
             .filter(|gate| bounds.contains(gate.position))
-            .map(|gate| gate.id)
-            .collect::<Vec<_>>();
-        self.selection.extend(ids);
-        let wires = self
-            .module()
+            .map(|gate| gate.id);
+        self.gates.extend(ids);
+        let wires = module
             .wires
             .iter()
             .filter(|wire| {
@@ -72,54 +89,42 @@ impl Editor {
                     .windows(2)
                     .any(|segment| segment_intersects_rect(segment[0], segment[1], bounds))
             })
-            .map(|wire| wire.id)
-            .collect::<Vec<_>>();
-        self.selected_wires.extend(wires);
-        self.selected_net = None;
+            .map(|wire| wire.id);
+        self.wires.extend(wires);
+        self.net = None;
     }
+}
 
-    pub fn hit_test(&self, point: Point, tolerance: f32) -> Option<Hit> {
-        let module = self.module();
-        for gate in module.gates.iter().rev() {
-            for pin in &gate.pins {
-                if gate.pin_position(pin).distance(point) <= tolerance {
-                    return Some(Hit::Pin(PinRef::new(gate.id, &pin.name)));
-                }
+pub fn hit_test(module: &Module, point: Point, tolerance: f32) -> Option<Hit> {
+    for gate in module.gates.iter().rev() {
+        for pin in &gate.pins {
+            if gate.pin_position(pin).distance(point) <= tolerance {
+                return Some(Hit::Pin(PinRef::new(gate.id, &pin.name)));
             }
         }
-        if let Some(gate) = module.gates.iter().rev().find(|gate| {
-            let bounds = gate.bounds();
-            bounds.expanded(2.0).contains(point)
-                && (gate.kind != GateKind::Frame
-                    || !Rect::from_points(
-                        bounds.min + Point::new(5.0, 5.0),
-                        bounds.max - Point::new(5.0, 5.0),
-                    )
-                    .contains(point))
-        }) {
-            return Some(Hit::Gate(gate.id));
-        }
-        module.wires.iter().rev().find_map(|wire| {
-            wire.points.windows(2).find_map(|segment| {
-                let (distance, nearest) = segment_distance(point, segment[0], segment[1]);
-                (distance <= tolerance).then_some(Hit::Wire {
-                    id: wire.id,
-                    net: wire.net,
-                    point: nearest,
-                })
+    }
+    if let Some(gate) = module.gates.iter().rev().find(|gate| {
+        let bounds = gate.bounds();
+        bounds.expanded(2.0).contains(point)
+            && (gate.kind != GateKind::Frame
+                || !Rect::from_points(
+                    bounds.min + Point::new(5.0, 5.0),
+                    bounds.max - Point::new(5.0, 5.0),
+                )
+                .contains(point))
+    }) {
+        return Some(Hit::Gate(gate.id));
+    }
+    module.wires.iter().rev().find_map(|wire| {
+        wire.points.windows(2).find_map(|segment| {
+            let (distance, nearest) = segment_distance(point, segment[0], segment[1]);
+            (distance <= tolerance).then_some(Hit::Wire {
+                id: wire.id,
+                net: wire.net,
+                point: nearest,
             })
         })
-    }
-
-    pub(crate) fn clean_selection(&mut self) {
-        if self.circuit.module(&self.active).is_none() {
-            self.active = self.circuit.root.clone();
-        }
-        self.selection.clear();
-        self.selected_wires.clear();
-        self.selected_net = None;
-        self.draft = None;
-    }
+    })
 }
 
 fn segment_intersects_rect(a: Point, b: Point, rect: Rect) -> bool {

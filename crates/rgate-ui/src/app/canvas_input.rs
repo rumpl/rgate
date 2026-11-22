@@ -193,15 +193,10 @@ impl GateApp {
                 self.editor.select(*id, false)
             }
             Some(Hit::Wire { net, id, .. }) => {
-                self.editor.selection.clear();
-                self.editor.selected_wires.clear();
-                self.editor.selected_wires.insert(*id);
-                self.editor.selected_net = Some(*net);
+                self.editor.selection.select_wire_single(*id, *net);
             }
             _ => {
                 self.editor.selection.clear();
-                self.editor.selected_wires.clear();
-                self.editor.selected_net = None;
             }
         }
         self.open_canvas_menu(event.position, window, cx);
@@ -329,7 +324,7 @@ impl GateApp {
                 }
             }
             Some(Hit::Pin(reference)) => self.editor.select(reference.gate, event.modifiers.shift),
-            Some(Hit::Wire { net, .. }) => self.editor.selected_net = Some(net),
+            Some(Hit::Wire { net, .. }) => self.editor.selection.net = Some(net),
             _ => {}
         }
         cx.notify();
@@ -418,7 +413,7 @@ impl GateApp {
                     }
                 }
                 Some(Hit::Gate(id) | Hit::Pin(rgate_core::PinRef { gate: id, .. })) => {
-                    if !self.editor.selection.contains(&id) || event.modifiers.shift {
+                    if !self.editor.selection.gates.contains(&id) || event.modifiers.shift {
                         self.editor.select(id, event.modifiers.shift);
                     }
                     if event.click_count >= 2 {
@@ -450,8 +445,6 @@ impl GateApp {
                 None => {
                     if !event.modifiers.shift {
                         self.editor.selection.clear();
-                        self.editor.selected_wires.clear();
-                        self.editor.selected_net = None;
                     }
                     self.canvas.drag = Some(Drag::Marquee {
                         start: point,

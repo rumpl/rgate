@@ -1,18 +1,23 @@
 use crate::edit::unique_name;
-use crate::{EditError, Editor, Hit, WireDraft, WireSegmentDrag};
+use crate::{EditError, Editor, Hit, WireDraft};
 use rgate_core::{
     Gate, GateId, GateKind, Module, Net, NetId, PinRef, Point, Signal, Wire, WireId, route_to,
     segment_distance,
 };
 use std::collections::{BTreeSet, HashMap};
 
-impl Editor {
-    pub fn begin_wire_drag(&mut self, wire: WireId, point: Point) -> Option<WireSegmentDrag> {
-        let definition = self
-            .module()
-            .wires
-            .iter()
-            .find(|definition| definition.id == wire)?;
+#[derive(Clone, Debug)]
+pub struct WireSegmentDrag {
+    pub wire: WireId,
+    points: Vec<Point>,
+    segment: usize,
+    horizontal: bool,
+    anchor: Point,
+}
+
+impl WireSegmentDrag {
+    pub fn from_module(module: &Module, wire: WireId, point: Point) -> Option<Self> {
+        let definition = module.wires.iter().find(|definition| definition.id == wire)?;
         let (segment, _) = definition
             .points
             .windows(2)
@@ -23,65 +28,74 @@ impl Editor {
             })
             .map(|(index, segment)| (index, segment_distance(point, segment[0], segment[1]).0))
             .min_by(|a, b| a.1.total_cmp(&b.1))?;
-        let drag = WireSegmentDrag {
+        Some(Self {
             wire,
             points: definition.points.clone(),
             segment,
             horizontal: definition.points[segment].y == definition.points[segment + 1].y,
             anchor: point,
+        })
+    }
+
+    pub fn moved_points(&self, point: Point, grid: f32, snap: bool) -> Vec<Point> {
+        let original = self.points[self.segment];
+        let raw = if self.horizontal {
+            original.y + point.y - self.anchor.y
+        } else {
+            original.x + point.x - self.anchor.x
         };
+        let coordinate = if snap {
+            (raw / grid).round() * grid
+        } else {
+            raw
+        };
+        let moved = |mut pt: Point| {
+            if self.horizontal {
+                pt.y = coordinate;
+            } else {
+                pt.x = coordinate;
+            }
+            pt
+        };
+        let a = self.points[self.segment];
+        let b = self.points[self.segment + 1];
+        let delta = if self.horizontal {
+            coordinate - a.y
+        } else {
+            coordinate - a.x
+        };
+        if delta.abs() < 0.001 {
+            return self.points.clone();
+        }
+        // Keep endpoints fixed, including junctions and unattached wire ends.
+        // Their new elbows extend the chosen segment without disconnecting pins.
+        let mut points = self.points[..self.segment].to_vec();
+        if self.segment == 0 {
+            points.push(a);
+        }
+        points.push(moved(a));
+        points.push(moved(b));
+        if self.segment + 2 == self.points.len() {
+            points.push(b);
+        }
+        points.extend_from_slice(&self.points[self.segment + 2..]);
+        points.dedup();
+        points
+    }
+}
+
+impl Editor {
+    pub fn begin_wire_drag(&mut self, wire: WireId, point: Point) -> Option<WireSegmentDrag> {
+        let drag = WireSegmentDrag::from_module(self.module(), wire, point)?;
         self.begin_gesture();
         Some(drag)
     }
 
     pub fn drag_wire_segment(&mut self, drag: &WireSegmentDrag, point: Point) {
-        if !point.is_finite() || self.gesture.is_none() {
+        if !point.is_finite() || !self.history.in_gesture() {
             return;
         }
-        let original = drag.points[drag.segment];
-        let raw = if drag.horizontal {
-            original.y + point.y - drag.anchor.y
-        } else {
-            original.x + point.x - drag.anchor.x
-        };
-        let coordinate = if self.snap {
-            (raw / self.grid).round() * self.grid
-        } else {
-            raw
-        };
-        let moved = |mut point: Point| {
-            if drag.horizontal {
-                point.y = coordinate;
-            } else {
-                point.x = coordinate;
-            }
-            point
-        };
-        let a = drag.points[drag.segment];
-        let b = drag.points[drag.segment + 1];
-        let delta = if drag.horizontal {
-            coordinate - a.y
-        } else {
-            coordinate - a.x
-        };
-        let points = if delta.abs() < 0.001 {
-            drag.points.clone()
-        } else {
-            // Keep endpoints fixed, including junctions and unattached wire ends.
-            // Their new elbows extend the chosen segment without disconnecting pins.
-            let mut points = drag.points[..drag.segment].to_vec();
-            if drag.segment == 0 {
-                points.push(a);
-            }
-            points.push(moved(a));
-            points.push(moved(b));
-            if drag.segment + 2 == drag.points.len() {
-                points.push(b);
-            }
-            points.extend_from_slice(&drag.points[drag.segment + 2..]);
-            points.dedup();
-            points
-        };
+        let points = drag.moved_points(point, self.grid, self.snap);
         if let Some(wire) = self
             .circuit
             .module_mut(&self.active)
@@ -270,7 +284,7 @@ impl Editor {
             });
         })?;
         self.draft = None;
-        self.selected_net = Some(net);
+        self.selection.net = Some(net);
         Ok(net)
     }
 

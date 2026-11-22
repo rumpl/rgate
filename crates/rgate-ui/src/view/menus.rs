@@ -221,18 +221,18 @@ impl GateApp {
     }
 
     pub(crate) fn canvas_menu_entries(&self) -> Vec<MenuEntry> {
-        let menu = if !self.editor.selection.is_empty() {
+        let menu = if !self.editor.selection.gates.is_empty() {
             "CanvasComponent"
-        } else if !self.editor.selected_wires.is_empty() {
+        } else if !self.editor.selection.wires.is_empty() {
             "CanvasWire"
         } else {
             "Canvas"
         };
-        let inputs = (self.editor.selection.len() == 1)
+        let inputs = (self.editor.selection.gates.len() == 1)
             .then(|| {
                 self.editor
                     .module()
-                    .gate(*self.editor.selection.iter().next().unwrap())
+                    .gate(*self.editor.selection.gates.iter().next().unwrap())
             })
             .flatten()
             .map_or(0, |gate| {

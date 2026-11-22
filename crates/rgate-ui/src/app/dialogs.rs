@@ -23,14 +23,14 @@ impl GateApp {
     }
 
     pub fn show_properties(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(net) = self.editor.selected_net {
+        if let Some(net) = self.editor.selection.net {
             if let Some(definition) = self.editor.module().net(net) {
                 self.dialogs
                     .show(Dialog::Net(Box::new(NetDialog::from_net(definition, window, cx))));
             }
             return;
         }
-        let Some(id) = self.editor.selection.iter().next().copied() else {
+        let Some(id) = self.editor.selection.gates.iter().next().copied() else {
             self.log("Select a gate first; module ports are edited in the Interface tab.".into());
             return;
         };

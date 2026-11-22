@@ -241,9 +241,9 @@ impl CanvasController {
             palette,
             module: editor.module().clone(),
             viewport: editor.viewport.clone(),
-            selection: editor.selection.clone(),
-            selected_net: editor.selected_net,
-            selected_wires: editor.selected_wires.clone(),
+            selection: editor.selection.gates.clone(),
+            selected_net: editor.selection.net,
+            selected_wires: editor.selection.wires.clone(),
             values,
             inputs,
             probes: editor

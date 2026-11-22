@@ -68,7 +68,7 @@ pub fn search(circuit: &Circuit, query: &str) -> Vec<SearchResult> {
 }
 impl Editor {
     pub fn align_selection(&mut self, alignment: Align) -> Result<(), EditError> {
-        if self.selection.len() < 2 {
+        if self.selection.gates.len() < 2 {
             return Err(EditError::Invalid(
                 "Select at least two components to align.".into(),
             ));
@@ -77,7 +77,7 @@ impl Editor {
             .module()
             .gates
             .iter()
-            .filter(|gate| self.selection.contains(&gate.id))
+            .filter(|gate| self.selection.gates.contains(&gate.id))
             .collect::<Vec<_>>();
         let bounds = gates
             .iter()
@@ -102,7 +102,7 @@ impl Editor {
         self.apply_positions(targets)
     }
     pub fn distribute_selection(&mut self, axis: Distribute) -> Result<(), EditError> {
-        if self.selection.len() < 3 {
+        if self.selection.gates.len() < 3 {
             return Err(EditError::Invalid(
                 "Select at least three components to distribute.".into(),
             ));
@@ -115,7 +115,7 @@ impl Editor {
             .module()
             .gates
             .iter()
-            .filter(|gate| self.selection.contains(&gate.id))
+            .filter(|gate| self.selection.gates.contains(&gate.id))
             .collect::<Vec<_>>();
         gates.sort_by(|a, b| {
             coordinate(a.position)
@@ -152,7 +152,7 @@ impl Editor {
         })
     }
     pub fn autoroute_selection(&mut self) -> Result<(usize, usize), EditError> {
-        let mut selected = self.selected_wires.clone();
+        let mut selected = self.selection.wires.clone();
         if selected.is_empty() {
             selected = self
                 .module()
@@ -161,11 +161,11 @@ impl Editor {
                 .filter(|wire| {
                     wire.start
                         .as_ref()
-                        .is_some_and(|pin| self.selection.contains(&pin.gate))
+                        .is_some_and(|pin| self.selection.gates.contains(&pin.gate))
                         || wire
                             .end
                             .as_ref()
-                            .is_some_and(|pin| self.selection.contains(&pin.gate))
+                            .is_some_and(|pin| self.selection.gates.contains(&pin.gate))
                 })
                 .map(|wire| wire.id)
                 .collect();
@@ -185,7 +185,7 @@ impl Editor {
             .iter()
             .filter(|gate| {
                 !matches!(gate.kind, GateKind::Frame | GateKind::Comment)
-                    && (self.selection.is_empty() || self.selection.contains(&gate.id))
+                    && (self.selection.gates.is_empty() || self.selection.gates.contains(&gate.id))
             })
             .map(|gate| gate.id)
             .collect::<BTreeSet<_>>();
@@ -429,6 +429,7 @@ mod tests {
         editor.distribute_selection(Distribute::Vertical).unwrap();
         let ys = editor
             .selection
+            .gates
             .iter()
             .map(|id| editor.module().gate(*id).unwrap().position.y)
             .collect::<Vec<_>>();
