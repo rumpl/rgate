@@ -1,4 +1,4 @@
-use crate::theme;
+use crate::{theme, view::mono_font};
 use gpui::{
     App, Bounds, ContentMask, Hsla, PathBuilder, Pixels, Window, fill, font, point, px, quad, rgb,
     size,
@@ -32,44 +32,85 @@ pub fn screen(position: Point, bounds: Bounds<Pixels>, viewport: &Viewport) -> g
 }
 
 pub fn paint(bounds: Bounds<Pixels>, scene: Scene, window: &mut Window, cx: &mut App) {
+    let painter = CanvasPainter {
+        scene: &scene,
+        bounds,
+    };
     window.with_content_mask(Some(ContentMask { bounds }), |window| {
-        window.paint_quad(fill(bounds, rgb(scene.palette.panel)));
-        if scene.grid {
-            let min = scene.viewport.to_world(Point::ZERO);
-            let max = scene.viewport.to_world(Point::new(
-                f32::from(bounds.size.width),
-                f32::from(bounds.size.height),
-            ));
-            let step = if scene.viewport.zoom < 0.7 {
-                20.0
-            } else {
-                10.0
-            };
-            let mut x = (min.x / step).ceil() * step;
-            while x <= max.x {
-                let mut y = (min.y / step).ceil() * step;
-                while y <= max.y {
-                    let p = screen(Point::new(x, y), bounds, &scene.viewport);
-                    window.paint_quad(fill(
-                        Bounds::new(p, size(px(1.0), px(1.0))),
-                        rgb(scene.palette.grid),
-                    ));
-                    y += step;
-                }
-                x += step;
-            }
+        painter.paint(window, cx);
+    });
+}
+
+struct CanvasPainter<'a> {
+    scene: &'a Scene,
+    bounds: Bounds<Pixels>,
+}
+
+impl<'a> CanvasPainter<'a> {
+    fn screen(&self, position: Point) -> gpui::Point<Pixels> {
+        screen(position, self.bounds, &self.scene.viewport)
+    }
+
+    fn zoom(&self) -> f32 {
+        self.scene.viewport.zoom
+    }
+
+    fn rect(&self, rectangle: Rect, color: Hsla, dashed: bool, window: &mut Window) {
+        rect(
+            rectangle,
+            self.bounds,
+            &self.scene.viewport,
+            color,
+            dashed,
+            window,
+        );
+    }
+
+    fn paint(&self, window: &mut Window, cx: &mut App) {
+        window.paint_quad(fill(self.bounds, rgb(self.scene.palette.panel)));
+        if self.scene.grid {
+            self.paint_grid(window);
         }
-        for gate in scene
+        self.paint_frames(window, cx);
+        self.paint_wires(window, cx);
+        self.paint_junctions(window);
+        self.paint_gates(window, cx);
+        self.paint_overlays(window, cx);
+    }
+
+    fn paint_grid(&self, window: &mut Window) {
+        let min = self.scene.viewport.to_world(Point::ZERO);
+        let max = self.scene.viewport.to_world(Point::new(
+            f32::from(self.bounds.size.width),
+            f32::from(self.bounds.size.height),
+        ));
+        let step = if self.zoom() < 0.7 { 20.0 } else { 10.0 };
+        let mut x = (min.x / step).ceil() * step;
+        while x <= max.x {
+            let mut y = (min.y / step).ceil() * step;
+            while y <= max.y {
+                let p = self.screen(Point::new(x, y));
+                window.paint_quad(fill(
+                    Bounds::new(p, size(px(1.0), px(1.0))),
+                    rgb(self.scene.palette.grid),
+                ));
+                y += step;
+            }
+            x += step;
+        }
+    }
+
+    fn paint_frames(&self, window: &mut Window, cx: &mut App) {
+        for gate in self
+            .scene
             .module
             .gates
             .iter()
             .filter(|gate| gate.kind == GateKind::Frame)
         {
-            rect(
+            self.rect(
                 gate.bounds(),
-                bounds,
-                &scene.viewport,
-                rgb(scene.palette.muted).into(),
+                rgb(self.scene.palette.muted).into(),
                 false,
                 window,
             );
@@ -79,256 +120,321 @@ pub fn paint(bounds: Bounds<Pixels>, scene: Scene, window: &mut Window, cx: &mut
                 } else {
                     &gate.text
                 },
-                screen(
-                    gate.bounds().min + Point::new(6.0, 4.0),
-                    bounds,
-                    &scene.viewport,
-                ),
-                11.0 * scene.viewport.zoom,
-                rgb(scene.palette.text).into(),
+                self.screen(gate.bounds().min + Point::new(6.0, 4.0)),
+                11.0 * self.zoom(),
+                rgb(self.scene.palette.text).into(),
                 window,
                 cx,
             );
         }
+    }
+
+    fn paint_wires(&self, window: &mut Window, cx: &mut App) {
         let mut labels = HashSet::new();
         let mut occupied_labels = Vec::new();
-        for wire in &scene.module.wires {
-            let definition = scene.module.net(wire.net).unwrap();
-            let color = if scene.selected_wires.contains(&wire.id)
-                || (scene.selected_wires.is_empty() && scene.selected_net == Some(wire.net))
+        for wire in &self.scene.module.wires {
+            let definition = self.scene.module.net(wire.net).unwrap();
+            let color = if self.scene.selected_wires.contains(&wire.id)
+                || (self.scene.selected_wires.is_empty()
+                    && self.scene.selected_net == Some(wire.net))
             {
-                rgb(scene.palette.selected_wire).into()
-            } else if let Some(value) = scene.values.get(&wire.net) {
-                scene.palette.signal_color(value)
+                rgb(self.scene.palette.selected_wire).into()
+            } else if let Some(value) = self.scene.values.get(&wire.net) {
+                self.scene.palette.signal_color(value)
             } else {
                 rgb(if definition.width > 1 {
-                    scene.palette.bus
+                    self.scene.palette.bus
                 } else {
-                    scene.palette.wire
+                    self.scene.palette.wire
                 })
                 .into()
             };
-            let width =
-                if definition.width > 1 { 2.2 } else { 1.0 } * scene.viewport.zoom.max(0.85);
+            let width = if definition.width > 1 { 2.2 } else { 1.0 } * self.zoom().max(0.85);
             stroke(
-                wire.points
-                    .iter()
-                    .map(|p| screen(*p, bounds, &scene.viewport)),
+                wire.points.iter().map(|p| self.screen(*p)),
                 width,
                 color,
                 false,
                 window,
             );
             if definition.show_name && !labels.contains(&wire.net) {
-                let label = if let Some(value) = scene.values.get(&wire.net) {
+                let label = if let Some(value) = self.scene.values.get(&wire.net) {
                     format!("{} = {}", definition.name, value)
                 } else {
                     definition.name.clone()
                 };
-                if let Some(location) =
-                    crate::label_layout::wire_label(&scene.module, wire, &label, &occupied_labels)
-                {
+                if let Some(location) = crate::label_layout::wire_label(
+                    &self.scene.module,
+                    wire,
+                    &label,
+                    &occupied_labels,
+                ) {
                     labels.insert(wire.net);
                     occupied_labels.push(
                         crate::label_layout::label_rect(location, &label, 10.0).expanded(2.0),
                     );
                     text(
                         &label,
-                        screen(location, bounds, &scene.viewport),
-                        10.0 * scene.viewport.zoom,
+                        self.screen(location),
+                        10.0 * self.zoom(),
                         color,
                         window,
                         cx,
                     );
                 }
             }
-            if scene.probes.contains(&wire.net) && !wire.points.is_empty() {
-                let position = screen(wire.points[wire.points.len() / 2], bounds, &scene.viewport);
+            if self.scene.probes.contains(&wire.net) && !wire.points.is_empty() {
+                let position = self.screen(wire.points[wire.points.len() / 2]);
                 circle(
                     position,
                     3.0,
                     rgb(0xffc800).into(),
-                    rgb(scene.palette.text).into(),
+                    rgb(self.scene.palette.text).into(),
                     window,
                 );
             }
         }
-        paint_junctions(&scene, bounds, window);
-        for gate in &scene.module.gates {
-            if scene.selection.contains(&gate.id) {
-                let rectangle = gate.bounds().expanded(5.0);
-                rect(
-                    rectangle,
-                    bounds,
-                    &scene.viewport,
-                    rgb(scene.palette.gate).into(),
-                    true,
+    }
+
+    fn paint_junctions(&self, window: &mut Window) {
+        let endpoints = self
+            .scene
+            .module
+            .wires
+            .iter()
+            .flat_map(|wire| {
+                let start = wire.start.is_none().then_some((wire.net, wire.points[0]));
+                let end = wire
+                    .end
+                    .is_none()
+                    .then_some((wire.net, *wire.points.last().unwrap()));
+                [start, end].into_iter().flatten()
+            })
+            .collect::<Vec<_>>();
+        let mut painted = HashSet::new();
+        for &(net, location) in &endpoints {
+            let nearby = endpoints
+                .iter()
+                .filter(|(other, point)| *other == net && point.distance(location) <= 4.5)
+                .map(|(_, point)| *point)
+                .collect::<Vec<_>>();
+            if nearby.len() < 2 {
+                continue;
+            }
+            let center = nearby
+                .iter()
+                .copied()
+                .fold(Point::ZERO, |sum, point| sum + point)
+                / nearby.len() as f32;
+            let key = (
+                net,
+                (center.x / 4.0).round() as i32,
+                (center.y / 4.0).round() as i32,
+            );
+            if painted.insert(key) {
+                let color = self
+                    .scene
+                    .values
+                    .get(&net)
+                    .map(|value| self.scene.palette.signal_color(value))
+                    .unwrap_or_else(|| rgb(self.scene.palette.wire).into());
+                circle(
+                    self.screen(center),
+                    1.8 * self.zoom(),
+                    color,
+                    color,
                     window,
                 );
-                for corner in [
-                    rectangle.min,
-                    rectangle.max,
-                    Point::new(rectangle.min.x, rectangle.max.y),
-                    Point::new(rectangle.max.x, rectangle.min.y),
-                ] {
-                    let position =
-                        screen(corner, bounds, &scene.viewport) - point(px(2.0), px(2.0));
-                    window.paint_quad(fill(
-                        Bounds::new(position, size(px(4.0), px(4.0))),
-                        rgb(scene.palette.gate),
-                    ));
-                }
+            }
+        }
+    }
+
+    fn paint_gates(&self, window: &mut Window, cx: &mut App) {
+        for gate in &self.scene.module.gates {
+            if self.scene.selection.contains(&gate.id) {
+                self.paint_selection_box(gate.bounds().expanded(5.0), window);
             }
             if gate.kind != GateKind::Frame {
-                paint_gate(gate, &scene, bounds, window, cx);
+                self.paint_gate(gate, window, cx);
             }
         }
-        if !scene.draft.is_empty() {
+    }
+
+    fn paint_selection_box(&self, rectangle: Rect, window: &mut Window) {
+        self.rect(rectangle, rgb(self.scene.palette.gate).into(), true, window);
+        for corner in [
+            rectangle.min,
+            rectangle.max,
+            Point::new(rectangle.min.x, rectangle.max.y),
+            Point::new(rectangle.max.x, rectangle.min.y),
+        ] {
+            let position = self.screen(corner) - point(px(2.0), px(2.0));
+            window.paint_quad(fill(
+                Bounds::new(position, size(px(4.0), px(4.0))),
+                rgb(self.scene.palette.gate),
+            ));
+        }
+    }
+
+    fn paint_overlays(&self, window: &mut Window, cx: &mut App) {
+        if !self.scene.draft.is_empty() {
             stroke(
-                scene
-                    .draft
-                    .iter()
-                    .map(|p| screen(*p, bounds, &scene.viewport)),
+                self.scene.draft.iter().map(|p| self.screen(*p)),
                 1.5,
-                rgb(scene.palette.selected_wire).into(),
+                rgb(self.scene.palette.selected_wire).into(),
                 true,
                 window,
             );
         }
-        if let Some(gate) = &scene.ghost {
-            paint_gate(gate, &scene, bounds, window, cx);
-            rect(
+        if let Some(gate) = &self.scene.ghost {
+            self.paint_gate(gate, window, cx);
+            self.rect(
                 gate.bounds().expanded(5.0),
-                bounds,
-                &scene.viewport,
-                rgb(scene.palette.muted).into(),
+                rgb(self.scene.palette.muted).into(),
                 true,
                 window,
             );
         }
-        if let Some(marquee) = scene.marquee {
-            let origin = screen(marquee.min, bounds, &scene.viewport);
-            let end = screen(marquee.max, bounds, &scene.viewport);
+        if let Some(marquee) = self.scene.marquee {
+            let origin = self.screen(marquee.min);
+            let end = self.screen(marquee.max);
             window.paint_quad(fill(
                 Bounds::from_corners(origin, end),
-                gpui::rgba((scene.palette.gate << 8) | 0x1f),
+                gpui::rgba((self.scene.palette.gate << 8) | 0x1f),
             ));
-            rect(
-                marquee,
-                bounds,
-                &scene.viewport,
-                rgb(scene.palette.gate).into(),
-                true,
-                window,
-            );
+            self.rect(marquee, rgb(self.scene.palette.gate).into(), true, window);
         }
-    });
-}
+    }
 
-fn paint_gate(
-    gate: &Gate,
-    scene: &Scene,
-    bounds: Bounds<Pixels>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let zoom = scene.viewport.zoom;
-    if gate.kind == GateKind::Comment {
+    fn paint_gate(&self, gate: &Gate, window: &mut Window, cx: &mut App) {
+        if gate.kind == GateKind::Comment {
+            self.paint_comment(gate, window, cx);
+            return;
+        }
+        self.paint_gate_body(gate, window, cx);
+        if matches!(gate.kind, GateKind::Module(_)) && gate.config.custom_symbol.is_empty() {
+            self.paint_module_leads(gate, window);
+        }
+        self.paint_gate_pins(gate, window, cx);
+        self.paint_gate_annotations(gate, window, cx);
+    }
+
+    fn paint_comment(&self, gate: &Gate, window: &mut Window, cx: &mut App) {
+        let zoom = self.zoom();
         for run in rgate_core::rich_comment(&gate.text) {
-            let origin = screen(gate.position + run.position, bounds, &scene.viewport);
+            let origin = self.screen(gate.position + run.position);
             if run.image.is_some() {
                 text(
                     &format!("[{}]", run.text),
                     origin,
                     run.style.size * zoom,
-                    rgb(scene.palette.muted).into(),
+                    rgb(self.scene.palette.muted).into(),
                     window,
                     cx,
                 );
+                continue;
+            }
+            let family = if run.style.monospace {
+                mono_font()
             } else {
-                let family = if run.style.monospace {
-                    if cfg!(target_family = "wasm") {
-                        "Lilex"
-                    } else {
-                        "Menlo"
-                    }
-                } else if cfg!(target_family = "wasm") {
-                    "IBM Plex Sans"
-                } else {
-                    "Helvetica"
-                };
-                let mut font = gpui::font(family);
-                if run.style.bold {
-                    font.weight = gpui::FontWeight::BOLD;
-                }
-                if run.style.italic {
-                    font.style = gpui::FontStyle::Italic;
-                }
-                let color = rgb(run.style.color.unwrap_or(scene.palette.text)).into();
-                let styled = gpui::TextRun {
-                    len: run.text.len(),
-                    font,
-                    color,
-                    background_color: None,
-                    underline: run.style.link.as_ref().map(|_| gpui::UnderlineStyle {
-                        color: Some(color),
-                        thickness: px(1.0),
-                        wavy: false,
-                    }),
-                    strikethrough: None,
-                };
-                let line = window.text_system().shape_line(
-                    run.text.into(),
-                    px(run.style.size * zoom),
-                    &[styled],
-                    None,
-                );
-                if let Err(error) = line.paint(
-                    origin,
-                    px(run.size.y * zoom),
-                    gpui::TextAlign::Left,
-                    None,
-                    window,
-                    cx,
-                ) {
-                    eprintln!("comment text: {error}");
-                }
+                ui_font()
+            };
+            let mut font = font(family);
+            if run.style.bold {
+                font.weight = gpui::FontWeight::BOLD;
+            }
+            if run.style.italic {
+                font.style = gpui::FontStyle::Italic;
+            }
+            let color = rgb(run.style.color.unwrap_or(self.scene.palette.text)).into();
+            let styled = gpui::TextRun {
+                len: run.text.len(),
+                font,
+                color,
+                background_color: None,
+                underline: run.style.link.as_ref().map(|_| gpui::UnderlineStyle {
+                    color: Some(color),
+                    thickness: px(1.0),
+                    wavy: false,
+                }),
+                strikethrough: None,
+            };
+            let line = window.text_system().shape_line(
+                run.text.into(),
+                px(run.style.size * zoom),
+                &[styled],
+                None,
+            );
+            if let Err(error) = line.paint(
+                origin,
+                px(run.size.y * zoom),
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            ) {
+                eprintln!("comment text: {error}");
             }
         }
-        return;
     }
-    if !gate.config.custom_symbol.is_empty() {
-        crate::symbol_editor::paint_shapes(
-            &gate.config.custom_symbol,
-            |p| {
-                screen(
-                    gate.position + p.rotated(gate.rotation),
-                    bounds,
-                    &scene.viewport,
-                )
-            },
-            zoom,
-            scene.palette.module,
-            scene.palette.panel,
-            window,
-            cx,
-        );
-    } else if gate.kind.port_direction().is_some() {
-        crate::modern_gates::paint(gate, scene, bounds, window, cx);
-    } else if gate.is_compact_bus_join() {
-        let transform = |local: Point| {
-            screen(
-                gate.position + local.rotated(gate.rotation),
-                bounds,
-                &scene.viewport,
-            )
-        };
+
+    fn paint_gate_body(&self, gate: &Gate, window: &mut Window, cx: &mut App) {
+        let zoom = self.zoom();
+        if !gate.config.custom_symbol.is_empty() {
+            crate::symbol_editor::paint_shapes(
+                &gate.config.custom_symbol,
+                |p| self.screen(gate.position + p.rotated(gate.rotation)),
+                zoom,
+                self.scene.palette.module,
+                self.scene.palette.panel,
+                window,
+                cx,
+            );
+        } else if gate.kind.port_direction().is_some() {
+            crate::modern_gates::paint(gate, self.scene, self.bounds, window, cx);
+        } else if gate.is_compact_bus_join() {
+            self.paint_compact_bus_join(gate, window);
+        } else if self.scene.theme != theme::Theme::Classic {
+            crate::modern_gates::paint(gate, self.scene, self.bounds, window, cx);
+        } else if crate::classic_gates::supports(&gate.kind) {
+            crate::classic_gates::paint(gate, self.scene, self.bounds, window, cx);
+        } else {
+            let rectangle = if matches!(gate.kind, GateKind::Module(_)) {
+                gate.module_body_bounds()
+            } else {
+                gate.bounds()
+            };
+            let origin = self.screen(rectangle.min);
+            let extent = rectangle.size() * zoom;
+            window.paint_quad(quad(
+                Bounds::new(origin, size(px(extent.x), px(extent.y))),
+                px(0.0),
+                rgb(self.scene.palette.panel),
+                px(zoom),
+                rgb(self.scene.palette.module),
+                Default::default(),
+            ));
+            text(
+                gate.kind.name(),
+                self.screen(crate::label_layout::block_title(gate)),
+                9.0 * zoom,
+                rgb(self.scene.palette.module).into(),
+                window,
+                cx,
+            );
+        }
+    }
+
+    fn paint_compact_bus_join(&self, gate: &Gate, window: &mut Window) {
+        let zoom = self.zoom();
+        let transform = |local: Point| self.screen(gate.position + local.rotated(gate.rotation));
         let height = gate
             .pins
             .iter()
             .map(|pin| pin.offset.y.abs())
             .fold(2.0, f32::max)
             + 1.0;
+        let color: Hsla = rgb(self.scene.palette.gate).into();
         stroke(
             [
                 transform(Point::new(-5.0, -height)),
@@ -337,7 +443,7 @@ fn paint_gate(
                 transform(Point::new(-5.0, height)),
             ],
             zoom,
-            rgb(scene.palette.gate).into(),
+            color,
             false,
             window,
         );
@@ -345,10 +451,10 @@ fn paint_gate(
             stroke(
                 [
                     transform(Point::new(-2.0, 0.0)),
-                    screen(gate.pin_position(pin), bounds, &scene.viewport),
+                    self.screen(gate.pin_position(pin)),
                 ],
                 zoom,
-                rgb(scene.palette.gate).into(),
+                color,
                 false,
                 window,
             );
@@ -356,252 +462,166 @@ fn paint_gate(
         for pin in gate.pins.iter().filter(|pin| pin.name != "Z") {
             stroke(
                 [
-                    screen(gate.pin_position(pin), bounds, &scene.viewport),
+                    self.screen(gate.pin_position(pin)),
                     transform(Point::new(-2.0, pin.offset.y)),
                 ],
                 zoom,
-                rgb(scene.palette.gate).into(),
+                color,
                 false,
                 window,
             );
         }
-    } else if scene.theme != theme::Theme::Classic {
-        crate::modern_gates::paint(gate, scene, bounds, window, cx);
-    } else if crate::classic_gates::supports(&gate.kind) {
-        crate::classic_gates::paint(gate, scene, bounds, window, cx);
-    } else {
-        let rectangle = if matches!(gate.kind, GateKind::Module(_)) {
-            gate.module_body_bounds()
-        } else {
-            gate.bounds()
-        };
-        let origin = screen(rectangle.min, bounds, &scene.viewport);
-        let extent = rectangle.size() * zoom;
-        window.paint_quad(quad(
-            Bounds::new(origin, size(px(extent.x), px(extent.y))),
-            px(0.0),
-            rgb(scene.palette.panel),
-            px(zoom),
-            rgb(scene.palette.module),
-            Default::default(),
-        ));
-        text(
-            gate.kind.name(),
-            screen(
-                crate::label_layout::block_title(gate),
-                bounds,
-                &scene.viewport,
-            ),
-            9.0 * zoom,
-            rgb(scene.palette.module).into(),
-            window,
-            cx,
-        );
     }
-    if matches!(gate.kind, GateKind::Module(_)) && gate.config.custom_symbol.is_empty() {
+
+    fn paint_module_leads(&self, gate: &Gate, window: &mut Window) {
+        let zoom = self.zoom();
         for pin in &gate.pins {
             let inward = Point::new(-pin.offset.x.signum() * 6.0, 0.0);
             stroke(
                 [
-                    screen(gate.pin_position(pin), bounds, &scene.viewport),
-                    screen(
-                        gate.position + (pin.offset + inward).rotated(gate.rotation),
-                        bounds,
-                        &scene.viewport,
-                    ),
+                    self.screen(gate.pin_position(pin)),
+                    self.screen(gate.position + (pin.offset + inward).rotated(gate.rotation)),
                 ],
                 module_lead_width(gate.pin_width(&pin.name), zoom),
-                rgb(scene.palette.module).into(),
+                rgb(self.scene.palette.module).into(),
                 false,
                 window,
             );
         }
     }
-    for pin in &gate.pins {
-        if (matches!(gate.kind, GateKind::Module(_))
+
+    fn paint_gate_pins(&self, gate: &Gate, window: &mut Window, cx: &mut App) {
+        let zoom = self.zoom();
+        let show_pin_labels = (matches!(gate.kind, GateKind::Module(_))
             || (gate.kind.is_extended() && !gate.is_compact_bus_join()))
-            && !(scene.theme != theme::Theme::Classic && gate.kind == GateKind::Jkff)
+            && !(self.scene.theme != theme::Theme::Classic && gate.kind == GateKind::Jkff);
+        let padding = if matches!(gate.kind, GateKind::Module(_))
+            && gate.config.custom_symbol.is_empty()
         {
-            let label = format!(
-                "{}{}",
-                pin.name,
-                pin.width
-                    .filter(|width| *width > 1)
-                    .map(|width| format!(" [{}:0]", width - 1))
-                    .unwrap_or_default()
-            );
-            let padding = if matches!(gate.kind, GateKind::Module(_))
-                && gate.config.custom_symbol.is_empty()
-            {
-                10.0
-            } else {
-                4.0
-            };
-            let offset = if pin.direction == rgate_core::Direction::Output {
-                let run = gpui::TextRun {
-                    len: label.len(),
-                    font: font(if cfg!(target_family = "wasm") {
-                        "IBM Plex Sans"
-                    } else {
-                        "Helvetica"
-                    }),
-                    color: rgb(scene.palette.module).into(),
-                    background_color: None,
-                    underline: None,
-                    strikethrough: None,
-                };
-                let shaped = window.text_system().shape_line(
-                    label.clone().into(),
-                    px((8.0 * zoom).clamp(6.0, 64.0)),
-                    &[run],
-                    None,
+            10.0
+        } else {
+            4.0
+        };
+        for pin in &gate.pins {
+            if show_pin_labels {
+                let label = format!(
+                    "{}{}",
+                    pin.name,
+                    pin.width
+                        .filter(|width| *width > 1)
+                        .map(|width| format!(" [{}:0]", width - 1))
+                        .unwrap_or_default()
                 );
-                Point::new(
-                    pin.offset.x - f32::from(shaped.width) / zoom - padding,
-                    pin.offset.y - 5.0,
-                )
-            } else {
-                Point::new(pin.offset.x + padding, pin.offset.y - 5.0)
-            };
+                let offset = if pin.direction == rgate_core::Direction::Output {
+                    let run = gpui::TextRun {
+                        len: label.len(),
+                        font: font(ui_font()),
+                        color: rgb(self.scene.palette.module).into(),
+                        background_color: None,
+                        underline: None,
+                        strikethrough: None,
+                    };
+                    let shaped = window.text_system().shape_line(
+                        label.clone().into(),
+                        px((8.0 * zoom).clamp(6.0, 64.0)),
+                        &[run],
+                        None,
+                    );
+                    Point::new(
+                        pin.offset.x - f32::from(shaped.width) / zoom - padding,
+                        pin.offset.y - 5.0,
+                    )
+                } else {
+                    Point::new(pin.offset.x + padding, pin.offset.y - 5.0)
+                };
+                text(
+                    &label,
+                    self.screen(gate.position + offset.rotated(gate.rotation)),
+                    8.0 * zoom,
+                    rgb(self.scene.palette.module).into(),
+                    window,
+                    cx,
+                );
+            }
+            let reference = rgate_core::PinRef::new(gate.id, &pin.name);
+            let position = self.screen(gate.pin_position(pin));
+            if self.scene.hover_pin.as_ref() == Some(&reference)
+                || self.scene.swap_pin.as_ref() == Some(&reference)
+            {
+                circle(
+                    position,
+                    5.0,
+                    rgb(0xffffa0).into(),
+                    rgb(self.scene.palette.wire).into(),
+                    window,
+                );
+            } else if pin.net.is_none() {
+                circle(
+                    position,
+                    3.2,
+                    rgb(self.scene.palette.panel).into(),
+                    rgb(self.scene.palette.wire).into(),
+                    window,
+                );
+            }
+        }
+    }
+
+    fn paint_gate_annotations(&self, gate: &Gate, window: &mut Window, cx: &mut App) {
+        let zoom = self.zoom();
+        if gate.kind == GateKind::Peripheral {
+            let incoming = gate
+                .pin("I")
+                .and_then(|pin| pin.net)
+                .and_then(|net| self.scene.values.get(&net))
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "Z".into());
+            let outgoing = self.scene.inputs.get(&gate.id).unwrap_or(&gate.initial);
             text(
-                &label,
-                screen(
-                    gate.position + offset.rotated(gate.rotation),
-                    bounds,
-                    &scene.viewport,
-                ),
+                &format!("in:{incoming} out:{outgoing}"),
+                self.screen(gate.position + Point::new(-43.0, gate.bounds().size().y / 2.0 + 3.0)),
                 8.0 * zoom,
-                rgb(scene.palette.module).into(),
+                rgb(self.scene.palette.module).into(),
                 window,
                 cx,
             );
         }
-        let reference = rgate_core::PinRef::new(gate.id, &pin.name);
-        let position = screen(gate.pin_position(pin), bounds, &scene.viewport);
-        if scene.hover_pin.as_ref() == Some(&reference)
-            || scene.swap_pin.as_ref() == Some(&reference)
-        {
-            circle(
-                position,
-                5.0,
-                rgb(0xffffa0).into(),
-                rgb(scene.palette.wire).into(),
+        if gate.show_name {
+            text(
+                &gate.name,
+                self.screen(crate::label_layout::instance_label(gate)),
+                10.5 * zoom,
+                rgb(self.scene.palette.gate).into(),
                 window,
-            );
-        } else if pin.net.is_none() {
-            circle(
-                position,
-                3.2,
-                rgb(scene.palette.panel).into(),
-                rgb(scene.palette.wire).into(),
-                window,
+                cx,
             );
         }
-    }
-    if gate.kind == GateKind::Peripheral {
-        let incoming = gate
-            .pin("I")
-            .and_then(|pin| pin.net)
-            .and_then(|net| scene.values.get(&net))
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "Z".into());
-        let outgoing = scene.inputs.get(&gate.id).unwrap_or(&gate.initial);
-        text(
-            &format!("in:{incoming} out:{outgoing}"),
-            screen(
-                gate.position + Point::new(-43.0, gate.bounds().size().y / 2.0 + 3.0),
-                bounds,
-                &scene.viewport,
-            ),
-            8.0 * zoom,
-            rgb(scene.palette.module).into(),
-            window,
-            cx,
-        );
-    }
-    if gate.show_name {
-        let offset = crate::label_layout::instance_label(gate);
-        text(
-            &gate.name,
-            screen(offset, bounds, &scene.viewport),
-            10.5 * zoom,
-            rgb(scene.palette.gate).into(),
-            window,
-            cx,
-        );
-    }
-    if gate.kind == GateKind::Led
-        && gate.config.led_display == rgate_core::LedDisplay::Bit
-        && gate.width > 1
-        && let Some(value) = gate
-            .pins
-            .first()
-            .and_then(|pin| pin.net)
-            .and_then(|net| scene.values.get(&net))
-    {
-        text(
-            &value.display_value(),
-            screen(
-                gate.position + Point::new(10.0, 0.0),
-                bounds,
-                &scene.viewport,
-            ),
-            9.0 * zoom,
-            rgb(scene.palette.gate).into(),
-            window,
-            cx,
-        );
+        if gate.kind == GateKind::Led
+            && gate.config.led_display == rgate_core::LedDisplay::Bit
+            && gate.width > 1
+            && let Some(value) = gate
+                .pins
+                .first()
+                .and_then(|pin| pin.net)
+                .and_then(|net| self.scene.values.get(&net))
+        {
+            text(
+                &value.display_value(),
+                self.screen(gate.position + Point::new(10.0, 0.0)),
+                9.0 * zoom,
+                rgb(self.scene.palette.gate).into(),
+                window,
+                cx,
+            );
+        }
     }
 }
 
-fn paint_junctions(scene: &Scene, bounds: Bounds<Pixels>, window: &mut Window) {
-    let endpoints = scene
-        .module
-        .wires
-        .iter()
-        .flat_map(|wire| {
-            let start = wire.start.is_none().then_some((wire.net, wire.points[0]));
-            let end = wire
-                .end
-                .is_none()
-                .then_some((wire.net, *wire.points.last().unwrap()));
-            [start, end].into_iter().flatten()
-        })
-        .collect::<Vec<_>>();
-    let mut painted = HashSet::new();
-    for &(net, location) in &endpoints {
-        let nearby = endpoints
-            .iter()
-            .filter(|(other, point)| *other == net && point.distance(location) <= 4.5)
-            .map(|(_, point)| *point)
-            .collect::<Vec<_>>();
-        if nearby.len() < 2 {
-            continue;
-        }
-        let center = nearby
-            .iter()
-            .copied()
-            .fold(Point::ZERO, |sum, point| sum + point)
-            / nearby.len() as f32;
-        let key = (
-            net,
-            (center.x / 4.0).round() as i32,
-            (center.y / 4.0).round() as i32,
-        );
-        if painted.insert(key) {
-            let color = scene
-                .values
-                .get(&net)
-                .map(|value| scene.palette.signal_color(value))
-                .unwrap_or_else(|| rgb(scene.palette.wire).into());
-            circle(
-                screen(center, bounds, &scene.viewport),
-                1.8 * scene.viewport.zoom,
-                color,
-                color,
-                window,
-            );
-        }
+fn ui_font() -> &'static str {
+    if cfg!(target_family = "wasm") {
+        "IBM Plex Sans"
+    } else {
+        "Helvetica"
     }
 }
 
@@ -618,11 +638,7 @@ pub fn text(
     }
     let run = gpui::TextRun {
         len: content.len(),
-        font: font(if cfg!(target_family = "wasm") {
-            "IBM Plex Sans"
-        } else {
-            "Helvetica"
-        }),
+        font: font(ui_font()),
         color,
         background_color: None,
         underline: None,
